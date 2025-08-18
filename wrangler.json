@@ -10,6 +10,7 @@
   },
   "upload_source_maps": true,
   "assets": {
-    "directory": "./dist"
-  }
+    "directory": "dist"
+  },
+  "build": {"command": "npm ci && npm run build" }
 }
