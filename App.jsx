@@ -25,6 +25,10 @@ function App() {
       <p className="read-the-docs">
         Click on the Vite and React logos to learn more
       </p>
+      <div>
+      <a href="/terms.html">Terms</a>
+      <a href="/privacy.html">Privacy</a>
+      </div>
     </>
   )
 }
