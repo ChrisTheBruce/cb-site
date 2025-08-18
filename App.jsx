@@ -1,3 +1,4 @@
+/*
 import { useState } from 'react'
 import viteLogo from '/vite.svg'
 import './App.css'
@@ -34,3 +35,31 @@ function App() {
 }
 
 export default App
+*/
+
+import React from 'react';
+import Header from './components/Header';
+import Hero from './components/Hero';
+import About from './components/About';
+import Experience from './components/Experience';
+import Downloads from './components/Downloads';
+import Contact from './components/Contact';
+import Footer from './components/Footer';
+
+const App: React.FC = () => {
+  return (
+    <div className="bg-brand-light min-h-screen">
+      <Header />
+      <main>
+        <Hero />
+        <About />
+        <Experience />
+        <Downloads />
+        <Contact />
+      </main>
+      <Footer />
+    </div>
+  );
+};
+
+export default App;
