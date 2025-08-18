@@ -26,8 +26,7 @@ function App() {
         Click on the Vite and React logos to learn more
       </p>
       <div>
-      <a href="/terms.html">Terms</a>
-      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a> . <a href="/privacy.html">Privacy</a>
       </div>
     </>
   )
