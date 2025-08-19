@@ -6,6 +6,7 @@ const items = [
   { title: 'Accruent Strategy Presentation', desc: 'Presented to senior management on engineering data extraction and cleaning technologies', badge: 'Data Insights' },
   { title: 'Supplier Collaboration', desc: 'Pioneered a SaaS solution for rapid exchange of engineering deliverables', badge: 'Supplier Collaboration' },
   { title: 'BIM standards support', desc: 'Introduced ISO19650 (BIM) best practices for Data Management in Engineering customers', badge: 'BIM' },
+  { title: 'Bulk Data Extraction', desc: 'Pioneered parallel extraction pipelines with SignalR, Service Bus and an LLM Router in Azure', badge: 'Azure' },
 ]
 
 export default function Work() {
