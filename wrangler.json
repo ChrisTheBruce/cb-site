@@ -18,5 +18,5 @@
   },
   
 // build app before deploy/preview
-  "build": { "command": "npm ci && npm run build" }
+  "build": { "command": "npm ci --progress=false && npm run build" }
 }

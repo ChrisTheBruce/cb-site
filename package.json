@@ -3,19 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  
   "scripts": {
-  /* old
-    "dev": "vite",
+    "dev": "wrangler dev",
     "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  */
-  "dev": "wrangler dev",
-  "build": "vite build",
-  "preview": "wrangler dev --remote",
-  "deploy": "wrangler deploy",
-  "lint": "eslint ."
+    "preview": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "lint": "eslint ."
   },
   "dependencies": {
     "react": "^19.1.1",
