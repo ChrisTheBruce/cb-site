@@ -1,21 +1,20 @@
-/* components/HomeHero/HomeHero.module.css */
 .hero {
-  position: relative;             /* establishes stacking context */
+  position: relative;
+  isolation: isolate;
   min-height: clamp(60vh, 78vh, 92vh);
   display: grid;
   align-items: center;
-  padding-block: clamp(32px, 6vw, 120px);
-  overflow: hidden;               /* keeps bg bleed contained */
+  overflow: hidden;
 }
 
 .hero::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;                    /* sits behind the text */
+  z-index: -1;
   background-image:
     linear-gradient(180deg, rgba(4,10,25,.60), rgba(4,10,25,.25)),
-    url('/hero-mobile.webp');     /* mobile first */
+    url('/hero-mobile.webp');
   background-size: cover;
   background-position: 40% 30%;
   background-repeat: no-repeat;
@@ -25,12 +24,11 @@
   .hero::before {
     background-image:
       linear-gradient(180deg, rgba(4,10,25,.60), rgba(4,10,25,.25)),
-      url('/hero-desktop.webp');  /* swap to desktop asset */
+      url('/hero-desktop.webp');
   }
 }
 
 .inner {
-  position: relative;             /* ensures text sits above */
-  z-index: 1;
-  padding-inline: clamp(16px, 4vw, 64px);
+  position: relative;
+  z-index: 1; /* ensures text is above background */
 }
