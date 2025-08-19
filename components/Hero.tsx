@@ -5,11 +5,11 @@ export default function Hero() {
     <section className="bg-gradient-to-b from-slate-50 to-white border-b">
       <div className="mx-auto max-w-6xl px-4 py-20 md:py-28 grid md:grid-cols-2 gap-10 items-center">
         <div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-600">
             Products & Platforms for <span className="text-blue-600">Engineering Projects and Operations</span>
           </h1>
           <p className="mt-5 text-lg text-slate-600 leading-relaxed">
-            I define strategy, and build innovative, AI led solutions for the Energy, Utilities and EPC industries.
+            I define product strategy and help to build innovative, AI led solutions for the Energy, Utilities and Engineering Construction industries.
           </p>
           <div className="mt-8 flex gap-3">
             <a href="#contact" className="inline-flex items-center px-5 py-3 rounded-lg border font-medium hover:bg-slate-50">
@@ -28,7 +28,7 @@ export default function Hero() {
               <li className="rounded border p-3">Strategic Consulting</li>
               <li className="rounded border p-3">Product Strategy</li>
             </ul>
-            <p className="mt-4 text-xs text-slate-500">Experience, Innovation and Drive.</p>
+            <p className="mt-5 text-xs text-slate-500">Experience, Innovation and Drive.</p>
           </div>
         </div>
       </div>
