@@ -15,7 +15,6 @@ function App() {
       <Navbar />
       <main id="main">
         <HomeHero />
-        <Hero />
         <Work />
         <Downloads />
         <Experience />
