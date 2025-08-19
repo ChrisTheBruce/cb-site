@@ -1,11 +1,21 @@
 // components/Downloads.tsx
-import React from 'react'
+import React from 'react';
 
-const DownloadIcon: React.FC = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+const DownloadIcon: React.FC<{ className?: string }> = ({ className = 'h-6 w-6' }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"               // 24px grid = crisper scaling
+    fill="currentColor"               // inherits button text color
+    aria-hidden="true"
+    className={`flex-shrink-0 ${className}`}
+  >
+    <path
+      fillRule="evenodd"
+      d="M5 20a1 1 0 0 1-1-1v-3a1 1 0 1 1 2 0v2h12v-2a1 1 0 1 1 2 0v3a1 1 0 0 1-1 1H5zm6.293-5.707a1 1 0 0 0 1.414 0l3-3a1 1 0 1 0-1.414-1.414L13 11.586V4a1 1 0 1 0-2 0v7.586l-1.293-1.293a1 1 0 0 0-1.414 1.414l3 3z"
+      clipRule="evenodd"
+    />
   </svg>
-)
+);
 
 const Downloads: React.FC = () => {
   return (
@@ -14,7 +24,7 @@ const Downloads: React.FC = () => {
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Resources &amp; Downloads</h2>
           <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">
-            Download my CV and other relevant documents.
+            Download background and other relevant documents.
           </p>
         </div>
 
@@ -28,25 +38,29 @@ const Downloads: React.FC = () => {
             <a
               href="/assets/Chris-Brighouse CV P.pdf"
               download
-              className="w-full sm:w-auto flex items-center justify-center bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all duration-300 shadow"
+              className="group inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg
+                         bg-blue-600 px-5 py-3 text-white font-semibold shadow
+                         hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
             >
-              <DownloadIcon />
+              <DownloadIcon className="h-6 w-6 transition-transform group-hover:translate-y-0.5" />
               Download CV (PDF)
             </a>
 
             <a
               href="/assets/Chris_Consulting_Services_SinglePage.pdf"
               download
-              className="w-full sm:w-auto flex items-center justify-center bg-gray-800 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition-all duration-300 shadow"
+              className="group inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg
+                         bg-gray-800 px-5 py-3 text-slate-100 font-semibold shadow
+                         hover:bg-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gray-800"
             >
-              <DownloadIcon />
+              <DownloadIcon className="h-6 w-6 transition-transform group-hover:translate-y-0.5" />
               Services Overview (PDF)
             </a>
           </div>
         </div>
       </div>
     </section>
-  )
-}
+  );
+};
 
-export default Downloads
+export default Downloads;
