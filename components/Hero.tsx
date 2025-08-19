@@ -28,7 +28,7 @@ export default function Hero() {
               <li className="rounded border p-3">Strategic Consulting</li>
               <li className="rounded border p-3">Product Strategy</li>
             </ul>
-            <p className="mt-5 text-xs text-slate-500">Experience, Innovation and Drive.</p>
+            <p className="mt-6 text-lg font-semibold text-slate-800">Experience, Innovation and Drive.</p>
           </div>
         </div>
       </div>
