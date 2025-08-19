@@ -38,7 +38,7 @@ export default function Downloads() {
             Note for Site Owner:
           </h3>
           <p className="text-gray-600">
-            Put downloadable files in <code>/public/assets/</code>, then link to
+            Place downloadable files in <code>/public/assets/</code>, then link to
             them like <code>/assets/filename.pdf</code>.
           </p>
 
