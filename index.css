@@ -3,6 +3,22 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { height: 100%; }
-body { @apply bg-slate-50 text-slate-900 antialiased; }
-a { @apply text-blue-600 underline-offset-2 hover:underline; }
+/* Global sizing */
+html, body {
+  height: 100%;
+}
+
+/* Page background + body text */
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/* Headings stand out more than body text */
+h1, h2, h3, h4 {
+  @apply text-slate-900 font-bold;
+}
+
+/* Links */
+a {
+  @apply text-blue-600 underline-offset-2 hover:underline;
+}
