@@ -1,48 +1,36 @@
 /* components/HomeHero/HomeHero.module.css */
 .hero {
-  position: relative;
-  isolation: isolate;                 /* keeps overlay effects scoped */
+  position: relative;             /* establishes stacking context */
   min-height: clamp(60vh, 78vh, 92vh);
   display: grid;
   align-items: center;
-  /* Background: mobile first */
+  padding-block: clamp(32px, 6vw, 120px);
+  overflow: hidden;               /* keeps bg bleed contained */
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;                    /* sits behind the text */
   background-image:
-    linear-gradient(180deg, rgba(4,10,25,.65), rgba(4,10,25,.35)),
-    url('/hero-mobile.webp');
+    linear-gradient(180deg, rgba(4,10,25,.60), rgba(4,10,25,.25)),
+    url('/hero-mobile.webp');     /* mobile first */
   background-size: cover;
-  background-position: 50% 35%;
+  background-position: 40% 30%;
   background-repeat: no-repeat;
-  /* Performance hints */
-  content-visibility: auto;
-  will-change: transform;
 }
 
 @media (min-width: 900px) {
-  .hero {
+  .hero::before {
     background-image:
       linear-gradient(180deg, rgba(4,10,25,.60), rgba(4,10,25,.25)),
-      url('/hero-desktop.webp');
-    background-position: 40% 30%;
+      url('/hero-desktop.webp');  /* swap to desktop asset */
   }
 }
 
-/* Optional: ultra-wide tweak to keep subject matter left-biased behind your text */
-@media (min-aspect-ratio: 16/9) and (min-width: 1400px) {
-  .hero { background-position: 30% 35%; }
-}
-
-/* An extra translucent overlay you can fine-tune for text contrast */
-.overlay {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(1200px 600px at 18% 45%, rgba(20,80,220,.25), transparent 70%),
-              linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.0) 40%, rgba(0,0,0,.35));
-  pointer-events: none;
-  z-index: -1; /* still below content thanks to isolation above */
-}
-
-.content {
-  position: relative;
+.inner {
+  position: relative;             /* ensures text sits above */
   z-index: 1;
-  padding: clamp(16px, 3vw, 48px);
+  padding-inline: clamp(16px, 4vw, 64px);
 }
