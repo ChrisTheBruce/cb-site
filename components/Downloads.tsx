@@ -24,7 +24,7 @@ const Downloads: React.FC = () => {
             </p>
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
                 <a 
-                    href="/assets/Chris-Brighouse-CV.pdf" 
+                    href="/assets/Chris-Brighouse CV P.pdf" 
                     download 
                     className="w-full sm:w-auto flex items-center justify-center bg-brand-blue text-white font-semibold py-3 px-6 rounded-lg hover:bg-opacity-90 transition-all duration-300 shadow"
                 >
@@ -32,7 +32,7 @@ const Downloads: React.FC = () => {
                     Download CV (PDF)
                 </a>
                 <a 
-                    href="/assets/Consulting-Services-Overview.pdf" 
+                    href="/assets/Chris_Consulting_Services_SinglePage.pdf" 
                     download 
                     className="w-full sm:w-auto flex items-center justify-center bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-600 transition-all duration-300 shadow"
                 >
