@@ -3,7 +3,7 @@ import React from 'react'
 const items = [
   { title: 'AI Presentations to MIT', desc: 'Presented the AI futures and strategy section for an MIT Product Roadmapping course', badge: 'AI Strategy' },
   { title: 'CFIHOS Standards Contributor', desc: 'Contributed to requirements and designs for the CFIHOS engineering information standard', badge: 'Data Standards' },
-  { title: 'Accruent Strategy Presentation', desc: 'Presented to senior managementon engineering data extraction and cleaning technologies', badge: 'Data Insights' },
+  { title: 'Accruent Strategy Presentation', desc: 'Presented to senior management on engineering data extraction and cleaning technologies', badge: 'Data Insights' },
 ]
 
 export default function Work() {

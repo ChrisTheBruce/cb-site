@@ -6,7 +6,7 @@ export default function Hero() {
       <div className="mx-auto max-w-6xl px-4 py-20 md:py-28 grid md:grid-cols-2 gap-10 items-center">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-600">
-            Products & Platforms for <span className="text-blue-600">Engineering Projects and Operations</span>
+            Product Management & AI Transformation for <span className="text-blue-600">Engineering Projects and Operations</span>
           </h1>
           <p className="mt-5 text-lg text-slate-600 leading-relaxed">
             I define product strategy and help to build innovative, AI led solutions for the Energy, Utilities and Engineering Construction industries.
