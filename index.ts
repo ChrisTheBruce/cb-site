@@ -46,12 +46,19 @@ export default {
 
     const html = `<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>cb-site</title>
-    ${cssTags}
-  </head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chris Brighouse — Products for Engineering Projects & Operations</title>
+  <meta name="description" content="Azure-native applications with AI features for engineering operations.">
+  <link rel="canonical" href="https://chrisbrighouse.com/" />
+  <meta property="og:title" content="Chris Brighouse — Product & Platform" />
+  <meta property="og:description" content="Building fast, maintainable apps for engineering operations." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://chrisbrighouse.com/" />
+  <meta name="theme-color" content="#ffffff">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
   <body>
     <div id="root"></div>
     <script type="module" src="${scriptPath}"></script>
