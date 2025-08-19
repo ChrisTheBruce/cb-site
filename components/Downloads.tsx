@@ -29,7 +29,7 @@ export default function Downloads() {
             Resources &amp; Downloads
           </h2>
           <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">
-            Download my CV and other relevant documents.
+            Click to download more information on my services
           </p>
         </div>
 
