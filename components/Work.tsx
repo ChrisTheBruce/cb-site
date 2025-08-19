@@ -1,9 +1,9 @@
 import React from 'react'
 
 const items = [
-  { title: 'Picklist Service', desc: 'CosmosDB + React + Graph deps, chat/RAG access.', badge: 'SaaS' },
-  { title: 'Plant Data Explorer', desc: 'BIM/IFC/Navisworks viewer with entity graph.', badge: 'Eng' },
-  { title: 'SharePoint Commands', desc: 'Custom commands integrating external apps.', badge: 'M365' },
+  { title: 'AI Presentations to MIT', desc: 'Presented AI futures and strategy as part of an MIT Product Roadmapping course', badge: 'AI Strategy' },
+  { title: 'CFIHOS Standards Contributor', desc: 'Attended and contributed to discussions on engineering information standards', badge: 'Data Standards' },
+  { title: 'Accruent Strategy Presentation', desc: 'Presented on engineering data extraction and cleaning technologies', badge: 'Data Insights' },
 ]
 
 export default function Work() {
