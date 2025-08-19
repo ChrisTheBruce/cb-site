@@ -10,6 +10,7 @@ export default function Navbar() {
         <nav className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between">
           <a href="/" className="font-semibold tracking-tight">Chris Brighouse</a>
           <div className="hidden sm:flex gap-6 text-sm">
+            <a href="#experience" className="hover:underline">Experience</a>
             <a href="#work" className="hover:underline">Work</a>
             <a href="#downloads" className="hover:underline">Downloads</a>
             <a href="#contact" className="hover:underline">Contact</a>

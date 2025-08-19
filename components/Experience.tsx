@@ -38,7 +38,7 @@ const ExperienceCard: React.FC<{ item: ExperienceItem }> = ({ item }) => (
 
 const Experience: React.FC = () => {
   return (
-    <section id="experience" className="py-20 bg-brand-light">
+    <section id="experience" className="py-20 scroll-mt-20 bg-brand-light">
       <div className="container mx-auto px-6">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Career Experience</h2>
