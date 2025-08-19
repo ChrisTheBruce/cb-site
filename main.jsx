@@ -7,7 +7,6 @@ import Contact from './components/Contact';
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
-    <Contact />
   </StrictMode>
 );
 
