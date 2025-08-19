@@ -46,6 +46,7 @@ import Downloads from './components/Downloads';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
 
+/* old typescript version
 const App: React.FC = () => {
   return (
     <div className="bg-brand-light min-h-screen">
@@ -60,6 +61,23 @@ const App: React.FC = () => {
       <Footer />
     </div>
   );
+*/
+
+  const App = () => {
+  return (
+    <div className="bg-brand-light min-h-screen">
+      <Header />
+      <main>
+        <Hero />
+        <About />
+        <Experience />
+        <Downloads />
+        <Contact />
+      </main>
+      <Footer />
+    </div>
+  );
+};
 };
 
 export default App;
