@@ -12,6 +12,7 @@
   "assets": {
     "directory": "dist"
   },
-//  to pre-create the dist folder
-//  "build": {"command": "npm ci && npm run build" }
+  
+  //  to pre-create the dist folder
+  "build": {"command": "npm ci && npm run build" }
 }
