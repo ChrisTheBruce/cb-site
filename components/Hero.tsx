@@ -12,7 +12,7 @@ export default function Hero() {
             I define strategy, and build innovative, AI led solutions for the Energy, Utilities and EPC industries.
           </p>
           <div className="mt-8 flex gap-3">
-            <a href="#contact" className="inline-flex items-center px-5 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700">
+            <a href="#contact" className="inline-flex items-center px-5 py-3 rounded-lg border font-medium hover:bg-slate-50">
               Let’s talk
             </a>
             <a href="#work" className="inline-flex items-center px-5 py-3 rounded-lg border font-medium hover:bg-slate-50">
