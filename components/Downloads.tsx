@@ -35,11 +35,9 @@ export default function Downloads() {
 
         <div className="max-w-2xl mx-auto bg-gray-50 p-8 rounded-lg border border-gray-200">
           <h3 className="font-semibold text-lg text-gray-800 mb-4">
-            Note for Site Owner:
+            Click on an item to download it:
           </h3>
           <p className="text-gray-600">
-            Place downloadable files in <code>/public/assets/</code>, then link to
-            them like <code>/assets/filename.pdf</code>.
           </p>
 
           {/* Buttons */}
