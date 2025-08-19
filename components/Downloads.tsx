@@ -48,8 +48,8 @@ export default function Downloads() {
               href="/assets/Chris-Brighouse-CV.pdf"
               download
               className="group inline-flex w-full sm:w-auto items-center justify-center gap-2
-                         rounded-lg bg-blue-600 px-5 py-3 text-white font-semibold shadow
-                         hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                         rounded-lg bg-slate-900 px-5 py-3 text-slate-100 font-semibold shadow
+                         hover:bg-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-900"
             >
               <DownloadIcon className="h-5 w-5 flex-shrink-0" />
               Download CV (PDF)
