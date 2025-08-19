@@ -4,5 +4,5 @@
 @tailwind utilities;
 
 html, body { height: 100%; }
-body { @apply bg-white text-slate-900 antialiased; }
+body { @apply bg-slate-50 text-slate-900 antialiased; }
 a { @apply text-blue-600 underline-offset-2 hover:underline; }
