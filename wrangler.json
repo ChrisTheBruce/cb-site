@@ -3,16 +3,20 @@
   "name": "cb-site",
   "main": "./index.ts",
   "compatibility_date": "2025-04-01",
-  "compatibility_flags": ["nodejs_compat"],
+// new comment out
+//  "compatibility_flags": ["nodejs_compat"],
+
   "workers_dev":true,
   "observability": {
     "enabled": true
   },
   "upload_source_maps": true,
   "assets": {
-    "directory": "dist"
+    "directory": "dist",
+    //new
+    "not_found_handling": "single-page-application" // serve SPA shell on navigations
   },
   
-  //  to pre-create the dist folder
-  "build": {"command": "npm ci && npm run build" }
+// build app before deploy/preview
+  "build": { "command": "npm ci && npm run build" }
 }
