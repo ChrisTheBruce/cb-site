@@ -7,6 +7,8 @@ import Footer from './components/Footer'
 import Experience from './components/Experience'
 import Contact from './components/Contact'
 import HomeHero from './components/HomeHero/HomeHero'
+import DownloadLink from "./components/DownloadLink.jsx";
+import UserAccountBadge from "./components/UserAccountBadge.jsx";
 
 function App() {
   return (
@@ -20,6 +22,7 @@ function App() {
         <Contact />
       </main>
       <Footer />
+      <UserAccountBadge />
     </>
   )
 }

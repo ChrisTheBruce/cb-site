@@ -1,12 +1,14 @@
 // components/Downloads.tsx
 import React from 'react';
+import DownloadLink from './DownloadLink';
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
+    // inherits the button text color
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="currentColor"            // inherits the button text color
+      stroke="currentColor"
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -42,23 +44,23 @@ export default function Downloads() {
 
           {/* Buttons */}
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
-            <a
+            <DownloadLink
               href="/assets/Chris-Brighouse-CV.pdf"
               download
-              className="inline-flex items-center px-5 py-3 rounded-lg border font-medium hover:bg-slate-50"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-lg border font-medium hover:bg-slate-50"
             >
               <DownloadIcon className="h-5 w-5 flex-shrink-0" />
-              Download CV (PDF)
-            </a>
+              <span>Download CV (PDF)</span>
+            </DownloadLink>
 
-            <a
+            <DownloadLink
               href="/assets/Chris_Consulting_Services_SinglePage.pdf"
               download
-              className="inline-flex items-center px-5 py-3 rounded-lg border font-medium hover:bg-slate-50"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-lg border font-medium hover:bg-slate-50"
             >
               <DownloadIcon className="h-5 w-5 flex-shrink-0" />
-              Services Overview (PDF)
-            </a>
+              <span>Services Overview (PDF)</span>
+            </DownloadLink>
           </div>
         </div>
       </div>
