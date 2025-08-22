@@ -1,4 +1,4 @@
-// POST /api/notify-download
+// POST /functions/api/notify-download
 // Sends an email to SUPPORT_EMAIL via Resend API when a file is downloaded.
 export async function onRequestPost(context) {
   const { request, env } = context;

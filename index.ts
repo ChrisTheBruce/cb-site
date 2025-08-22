@@ -1,6 +1,6 @@
 // index.ts — Cloudflare Worker (full replacement)
 // - Serves Vite build via ASSETS (with manifest auto-detect)
-// - Robust /api/notify-download handler (MailChannels default; optional Resend)
+// - Robust /functions/api/notify-download handler (MailChannels default; optional Resend)
 // - Preserves your HTML shell and injects built script + CSS
 // - CORS on all responses; never blind 500s
 
@@ -35,10 +35,10 @@ export default {
 
     // ---- API: notify-download (accept common variants to avoid typos) ----
     const isNotify = (
-      pathname === '/api/notify-download' ||
-      pathname === '/api/notify_download' ||
-      pathname === '/api/notify-downloads' ||
-      pathname === '/api/notify_downloads'
+      pathname === '/functions/api/notify-download' ||
+      pathname === '/functions/api/notify_download' ||
+      pathname === '/functions/api/notify-downloads' ||
+      pathname === '/functions/api/notify_downloads'
     ) && request.method === 'POST';
 
     if (isNotify) {
