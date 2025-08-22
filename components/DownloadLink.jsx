@@ -10,7 +10,7 @@ function notifyDownload(email, path) {
     ts: new Date().toISOString(),
     ua: typeof navigator !== "undefined" ? navigator.userAgent : ""
   });
-
+  payload
   try {
     if (navigator?.sendBeacon) {
       const blob = new Blob([payload], { type: "application/json" });
@@ -21,8 +21,7 @@ function notifyDownload(email, path) {
     fetch("/api/notify-download", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: "fred bloggs",
-      // payload,
+      body: payload,
       keepalive: true,
     }).catch(() => {});
   } catch {}
