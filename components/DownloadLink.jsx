@@ -21,7 +21,8 @@ function notifyDownload(email, path) {
     fetch("/api/notify-download", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: payload,
+      body: "fred bloggs",
+      // payload,
       keepalive: true,
     }).catch(() => {});
   } catch {}
