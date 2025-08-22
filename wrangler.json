@@ -17,6 +17,28 @@
     "not_found_handling": "single-page-application" // serve SPA shell on navigations
   },
   
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "vars": {
+    "EMAIL_PROVIDER": "mailchannels",
+    "SUPPORT_TO_EMAIL": "support@chrisbrighouse.com",
+    "SENDER_EMAIL": "no-reply@chrisbrighouse.com",
+    "SENDER_NAME": "Downloads",
+    "CORS_ORIGIN": "https://www.chrisbrighouse.com"
+  },
+
+  "routes": [
+    {
+      "pattern": "www.chrisbrighouse.com/*",
+      "zone_name": "chrisbrighouse.com"
+    }
+  ]
+
 // build app before deploy/preview
   "build": { "command": "npm ci --progress=false && npm run build" }
 }
