@@ -26,7 +26,7 @@ function ProtectedRoute({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/functions/api/me', { credentials: 'include' });
+        const res = await fetch('/api/me', { credentials: 'include' });
         const ok = res.ok;
         if (!cancelled) setAllowed(ok);
       } catch {

@@ -1,6 +1,6 @@
 // index.ts — Cloudflare Worker (full replacement)
 // - Serves Vite build via ASSETS (with manifest auto-detect)
-// - Robust /functions/api/notify-download handler (MailChannels default; optional Resend)
+// - Robust /api/notify-download handler (MailChannels default; optional Resend)
 // - Preserves your HTML shell and injects built script + CSS
 // - CORS on all responses; never blind 500s
 
