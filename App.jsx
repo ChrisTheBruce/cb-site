@@ -15,8 +15,8 @@ import UserAccountBadge from './components/UserAccountBadge.jsx';
 // Otherwise, you can add them later.
 //   src/pages/Login.jsx
 //   src/pages/Chat.jsx
-import Login from './pages/src/Login.jsx';
-import Chat from './pages/src/Chat.jsx';
+import Login from './src/pages/Login.jsx';
+import Chat from './src/pages/Chat.jsx';
 
 // --- Guard that checks /api/me and redirects to /login if not authed ---
 function ProtectedRoute({ children }) {
