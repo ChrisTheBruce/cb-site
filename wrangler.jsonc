@@ -3,20 +3,12 @@
   "name": "cb-site",
   "main": "./index.ts",
   "compatibility_date": "2025-04-01",
-// new comment out
-//  "compatibility_flags": ["nodejs_compat"],
 
-  "workers_dev":true,
-  "observability": {
-    "enabled": true
-  },
+  "workers_dev": true,
+  "observability": { "enabled": true },
   "upload_source_maps": true,
-  "assets": {
-    "directory": "dist",
-    //new
-    "not_found_handling": "single-page-application" // serve SPA shell on navigations
-  },
-  
+
+  // Serve Vite build and let the Worker handle /api/* before the SPA
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -33,12 +25,11 @@
   },
 
   "routes": [
-    {
-      "pattern": "www.chrisbrighouse.com/*",
-      "zone_name": "chrisbrighouse.com"
-    }
+    { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
+    // If you also use chris.brighouse.com, add:
+    // { "pattern": "chris.brighouse.com/*", "zone_name": "brighouse.com" }
   ],
 
-// build app before deploy/preview
+  // Build site before deploy so /dist exists
   "build": { "command": "npm ci --progress=false && npm run build" }
 }

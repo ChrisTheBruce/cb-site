@@ -8,7 +8,7 @@ interface Env {
   ASSETS?: Fetcher;
 
   // Email config
-  EMAIL_PROVIDER?: string; // "mailchannels" (default) or "resend"
+  EMAIL_PROVIDER?: string;   // "mailchannels" (default) or "resend"
   SUPPORT_TO_EMAIL?: string; // e.g. support@chrisbrighouse.com
   SENDER_EMAIL?: string;     // e.g. no-reply@chrisbrighouse.com
   SENDER_NAME?: string;      // e.g. "Downloads"
@@ -23,7 +23,6 @@ type ManifestEntry = {
   css?: string[];
   isEntry?: boolean;
 };
-
 type Manifest = Record<string, ManifestEntry>;
 
 export default {
@@ -53,11 +52,14 @@ export default {
     if (isNotify) {
       try {
         let payload: any;
-        try { payload = await request.json(); } catch { return j({ error: 'bad_json' }, 400, env, url.origin); }
+        try { payload = await request.json(); }
+        catch { return j({ error: 'bad_json' }, 400, env, url.origin); }
 
         const userEmail = String(payload?.userEmail ?? '').trim();
         const file = String(payload?.file ?? '').trim();
-        if (!isEmail(userEmail) || !file) return j({ error: 'invalid_input' }, 400, env, url.origin);
+        if (!isEmail(userEmail) || !file) {
+          return j({ error: 'invalid_input' }, 400, env, url.origin);
+        }
 
         const provider = (env.EMAIL_PROVIDER ?? 'mailchannels').toLowerCase();
         const toEmail = env.SUPPORT_TO_EMAIL;
@@ -78,7 +80,9 @@ export default {
               from: { email: fromEmail, name: fromName },
               reply_to: { email: userEmail },
               subject: `Download: ${file}`,
-              content: [{ type: 'text/plain', value: `User ${userEmail} downloaded ${file} from ${url.origin}.` }]
+              content: [
+                { type: 'text/plain', value: `User ${userEmail} downloaded ${file} from ${url.origin}.` }
+              ]
             })
           });
 
@@ -86,13 +90,16 @@ export default {
           console.log('mailchannels status', res.status, (bodyText || '').slice(0, 300));
 
           if (res.status !== 202 && !res.ok) {
-            return j({ error: 'email_failed', provider: 'mailchannels', status: res.status, body: clip(bodyText) }, 502, env, url.origin);
+            return j({ error: 'email_failed', provider: 'mailchannels', status: res.status, body: clip(bodyText) },
+                     502, env, url.origin);
           }
           return j({ ok: true }, 200, env, url.origin);
         }
 
         if (provider === 'resend') {
-          if (!env.RESEND_API_KEY) return j({ error: 'missing_secret', secret: 'RESEND_API_KEY' }, 500, env, url.origin);
+          if (!env.RESEND_API_KEY) {
+            return j({ error: 'missing_secret', secret: 'RESEND_API_KEY' }, 500, env, url.origin);
+          }
           const r = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -106,7 +113,10 @@ export default {
           });
           const txt = await r.text();
           console.log('resend status', r.status, txt.slice(0, 300));
-          if (!r.ok) return j({ error: 'email_failed', provider: 'resend', status: r.status, body: clip(txt) }, 502, env, url.origin);
+          if (!r.ok) {
+            return j({ error: 'email_failed', provider: 'resend', status: r.status, body: clip(txt) },
+                     502, env, url.origin);
+          }
           return j({ ok: true }, 200, env, url.origin);
         }
 
@@ -118,25 +128,26 @@ export default {
     }
 
     // ---- HTML shell for SPA (preserves your original template) ----
-    // Load Vite manifest from assets to find the entry file
     if (request.method === 'GET') {
       if (!env.ASSETS?.fetch) return new Response('Assets binding missing', { status: 500 });
 
+      // Load Vite manifest to discover entrypoint + CSS
       const manifestReq = new Request(new URL('/.vite/manifest.json', url), request);
       const manRes = await env.ASSETS.fetch(manifestReq);
       if (!manRes.ok) return new Response('Manifest not found.', { status: 500 });
 
       let manifest: Manifest;
-      try { manifest = await manRes.json(); } catch { return new Response('Bad manifest JSON.', { status: 500 }) }
+      try { manifest = await manRes.json(); }
+      catch { return new Response('Bad manifest JSON.', { status: 500 }); }
 
       const entries = Object.values(manifest);
       const entry = entries.find((e) => (e as any).isEntry) || entries[0];
       if (!entry?.file) return new Response('Build manifest missing entry.', { status: 500 });
 
       const scriptPath = `/${entry.file}`;
-      const cssTags = (entry.css || []).map((c) => `<link rel="stylesheet" href="/${c}">`).join('');
+      const cssTags = (entry.css || []).map(c => `<link rel="stylesheet" href="/${c}">`).join('');
 
-      // Your original HTML
+      // *** Your original HTML (preserved) ***
       let html = `<!doctype html>
 <html lang="en">
 <head>
@@ -158,9 +169,35 @@ export default {
   </body>
 </html>`;
 
-      // Inject CSS tags just before </head> if present
+      // Inject CSS <link> tags just before </head>
       if (cssTags) html = html.replace('</head>', `${cssTags}\n</head>`);
 
       const headers = new Headers({
         'content-type': 'text/html; charset=utf-8',
-        'cache-control':
+        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
+        'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+      });
+
+      return new Response(html, { status: 200, headers });
+    }
+
+    // Final fallback
+    if (env.ASSETS?.fetch) return env.ASSETS.fetch(request);
+    return new Response('Not found', { status: 404 });
+  }
+} satisfies ExportedHandler<Env>;
+
+// ---- Helpers ----
+function isEmail(e: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+}
+function clip(s: string): string { return (s || '').slice(0, 500); }
+function cors(env: Env, fallbackOrigin: string): Record<string, string> {
+  const origin = env.CORS_ORIGIN || fallbackOrigin;
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'content-type, authorization',
+    'Access-Control-Max-Age': '86400'
+  };
+}
