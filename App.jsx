@@ -15,8 +15,8 @@ import UserAccountBadge from './components/UserAccountBadge.jsx';
 // Otherwise, you can add them later.
 //   src/pages/Login.jsx
 //   src/pages/Chat.jsx
-import Login from './pages/Login.jsx';
-import Chat from './pages/Chat.jsx';
+import Login from './pages/src/Login.jsx';
+import Chat from './pages/src/Chat.jsx';
 
 // --- Guard that checks /api/me and redirects to /login if not authed ---
 function ProtectedRoute({ children }) {
@@ -26,7 +26,7 @@ function ProtectedRoute({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/me', { credentials: 'include' });
+        const res = await fetch('/functions/api/me', { credentials: 'include' });
         const ok = res.ok;
         if (!cancelled) setAllowed(ok);
       } catch {
