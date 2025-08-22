@@ -12,13 +12,13 @@ export default function Chat() {
       try {
         const res = await fetch("/api/me", { credentials: "include" });
         if (!res.ok) {
-          if (!cancelled) nav("/api/login", { replace: true });
+          if (!cancelled) nav("/login", { replace: true });
           return;
         }
         const data = await res.json();
         if (!cancelled) setUsername(data?.username ?? null);
       } catch {
-        if (!cancelled) nav("/api/login", { replace: true });
+        if (!cancelled) nav("/login", { replace: true });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -30,7 +30,7 @@ export default function Chat() {
     try {
       await fetch("/api/logout", { method: "POST", credentials: "include" });
     } finally {
-      nav("/api/login", { replace: true });
+      nav("/login", { replace: true });
     }
   };
 
