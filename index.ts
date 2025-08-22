@@ -35,10 +35,7 @@ export default {
 
     // ---- API: notify-download (accept common variants to avoid typos) ----
     const isNotify = (
-      pathname === './functions/api/notify-download' ||
-      pathname === './functions/api/notify_download' ||
-      pathname === './functions/api/notify-downloads' ||
-      pathname === './functions/api/notify_downloads'
+      pathname === '/api/notify-download' 
     ) && request.method === 'POST';
 
     if (isNotify) {
