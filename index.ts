@@ -18,9 +18,67 @@ type ManifestEntry = { file: string; css?: string[]; isEntry?: boolean };
 type Manifest = Record<string, ManifestEntry>;
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: any): Promise<Response> {
     const url = new URL(request.url);
-    const { pathname, origin } = url;
+    const path = url.pathname.replace(/\/+$/, ""); // trim trailing slash
+
+ // --- API: login ---
+    if (path === "/api/login") {
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      const body = await request.json().catch(() => ({}));
+      const ok = body.username === env.AUTH_USERNAME && body.password === env.AUTH_PASSWORD;
+      await new Promise(r => setTimeout(r, 200));
+      if (!ok) {
+        return new Response(JSON.stringify({ error: "Invalid credentials" }), {
+          status: 401,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
+      }
+      const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7;
+      const token = await createToken(env.SESSION_SECRET, { u: body.username, exp });
+      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+      headers.append("Set-Cookie", setSessionCookie(token));
+      return new Response(JSON.stringify({ ok: true, username: body.username }), { status: 200, headers });
+    }
+
+    // --- API: me ---
+    if (path === "/api/me") {
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
+      }
+      const token = getCookie(request, "session");
+      const p = await readToken(env.SESSION_SECRET, token);
+      if (!p) return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
+      return new Response(JSON.stringify({ username: p.u }), {
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    }
+
+    // --- API: logout ---
+    if (path === "/api/logout") {
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+      headers.append("Set-Cookie", "session=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0");
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+    }
+
+    // Any other /api/* -> never serve the SPA
+    if (path.startsWith("/api/")) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    // Static assets + SPA fallback
+    let res = await env.ASSETS.fetch(request);
+    if (res.status === 404 && request.method === "GET" && !path.includes(".")) {
+      const ix = new URL("/", url);
+      res = await env.ASSETS.fetch(new Request(ix.toString(), request));
+    }
+
 
     // Serve versioned assets directly (hashed files, images, fonts, sourcemaps)
     if (/\.(css|js|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|txt|map)$/i.test(pathname)) {
