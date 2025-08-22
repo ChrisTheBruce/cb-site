@@ -1,5 +1,5 @@
 // components/Downloads.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import DownloadLink from './DownloadLink';
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -22,7 +22,31 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+type MeResponse = { username?: string };
+
 export default function Downloads() {
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/me', { credentials: 'include' });
+        if (!res.ok) {
+          if (!cancelled) setUsername(null);
+          return;
+        }
+        const data: MeResponse = await res.json();
+        if (!cancelled) setUsername(data.username ?? null);
+      } catch {
+        if (!cancelled) setUsername(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
       <div className="container mx-auto px-6">
@@ -30,6 +54,12 @@ export default function Downloads() {
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Resources &amp; Downloads
           </h2>
+
+          {/* Signed-in email shown directly under the title */}
+          {username && (
+            <p className="mt-2 text-sm text-gray-600">{username}</p>
+          )}
+
           <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">
             Click to download more information on my services
           </p>

@@ -10,7 +10,7 @@ function notifyDownload(email, path) {
     ts: new Date().toISOString(),
     ua: typeof navigator !== "undefined" ? navigator.userAgent : ""
   });
-  payload
+  
   try {
     if (navigator?.sendBeacon) {
       const blob = new Blob([payload], { type: "application/json" });
