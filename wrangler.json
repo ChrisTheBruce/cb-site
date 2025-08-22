@@ -37,7 +37,7 @@
       "pattern": "www.chrisbrighouse.com/*",
       "zone_name": "chrisbrighouse.com"
     }
-  ]
+  ],
 
 // build app before deploy/preview
   "build": { "command": "npm ci --progress=false && npm run build" }
