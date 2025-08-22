@@ -1,4 +1,4 @@
-import { getCookie, readToken } from "../_utils/session";
+import { getCookie, readToken } from "../../server/auth/session";
 
 export const onRequestGet = async ({ request, env }) => {
   const token = getCookie(request, "session");

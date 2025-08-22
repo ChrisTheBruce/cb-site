@@ -1,4 +1,4 @@
-import { createToken, setSessionCookie } from "../_utils/session";
+import { createToken, setSessionCookie } from "../../server/auth/session";
 
 export const onRequestPost = async ({ request, env }) => {
   try {
