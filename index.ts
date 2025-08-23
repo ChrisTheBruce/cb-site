@@ -45,10 +45,9 @@ export default {
             const username = (body.username || body.email || "").toString().trim();
             const password = (body.password || "").toString();
 
-            // Demo auth rule: require non-empty username & password.
-            // Replace with your real validation (Azure AD, etc.) later.
-            if (!username || !password) {
-              return json({ ok: false, error: "missing credentials" }, 400, env, origin);
+            // Strict demo auth: only allow username "chris" and password "badcommand"
+            if (username !== "chris" || password !== "badcommand") {
+              return json({ ok: false, error: "Invalid username or password." }, 401, env, origin);
             }
 
             const token = makeToken(username);
