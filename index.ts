@@ -82,7 +82,17 @@ export default {
 
     // Serve versioned assets directly (hashed files, images, fonts, sourcemaps)
     if (/\.(css|js|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|txt|map)$/i.test(pathname)) {
-      if (env.ASSETS?.fetch) return env.ASSETS.fetch(request);
+      if (env.ASSETS?.fetch) {
+      const r = await env.ASSETS.fetch(request);
+      const ct = r.headers.get('content-type') || '';
+      const h = new Headers(r.headers);
+      if (ct.includes('text/html')) {
+        h.set('Cache-Control', 'no-store');
+      } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
+        h.set('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+      return new Response(r.body, { status: r.status, headers: h });
+    }
       return new Response('Assets binding missing', { status: 500 });
     }
 
@@ -180,8 +190,16 @@ export default {
         }
       }
       if (!manifest) {
-        // Fall back to serving the SPA from ASSETS directly
-        return env.ASSETS.fetch(request);
+        // Fall back to serving from ASSETS; apply caching rules (HTML no-store, assets long-cache)
+        const r = await env.ASSETS.fetch(request);
+        const ct = r.headers.get('content-type') || '';
+        const h = new Headers(r.headers);
+        if (ct.includes('text/html')) {
+          h.set('Cache-Control', 'no-store');
+        } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
+          h.set('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+        return new Response(r.body, { status: r.status, headers: h });
       }
 
       const entries = Object.values(manifest);
@@ -218,14 +236,24 @@ export default {
 
       const headers = new Headers({
         'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
+        'cache-control': 'no-store',
         'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
       });
       return new Response(html, { status: 200, headers });
     }
 
     // Final fallback
-    if (env.ASSETS?.fetch) return env.ASSETS.fetch(request);
+    if (env.ASSETS?.fetch) {
+      const r = await env.ASSETS.fetch(request);
+      const ct = r.headers.get('content-type') || '';
+      const h = new Headers(r.headers);
+      if (ct.includes('text/html')) {
+        h.set('Cache-Control', 'no-store');
+      } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
+        h.set('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+      return new Response(r.body, { status: r.status, headers: h });
+    }
     return new Response('Not found', { status: 404 });
   }
 } satisfies ExportedHandler<Env>;

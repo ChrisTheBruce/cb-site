@@ -9,7 +9,7 @@ import Footer from './components/Footer';
 import Experience from './components/Experience';
 import Contact from './components/Contact';
 import HomeHero from './components/HomeHero/HomeHero';
-import UserAccountBadge from './components/UserAccountBadge.jsx';
+//import UserAccountBadge from './components/UserAccountBadge.jsx';
 import Login from './src/pages/Login.jsx';
 import Chat from './src/pages/Chat.jsx';
 
@@ -69,7 +69,6 @@ function App() {
       </Routes>
 
       <Footer />
-      <UserAccountBadge />
     </BrowserRouter>
   );
 }
