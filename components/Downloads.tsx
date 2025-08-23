@@ -1,10 +1,10 @@
 // components/Downloads.tsx
 import React, { useEffect, useState } from 'react';
 import DownloadLink from './DownloadLink';
+import { getEmail, onEmailChange } from '../utils/emailStore';
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    // inherits the button text color
     <svg
       viewBox="0 0 24 24"
       fill="none"
@@ -22,14 +22,6 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-type MeResponse = { username?: string };
-
-/**
- * --- Email badge with "×" to clear ---
- * - Tries server endpoint POST /api/clear-email (optional to implement).
- * - Falls back to deleting likely cookie names client-side.
- * - Notifies parent via onCleared().
- */
 function EmailBadge({
   email,
   onCleared,
@@ -39,43 +31,52 @@ function EmailBadge({
   onCleared: () => void;
   className?: string;
 }) {
-  const clearCookiesClientSide = () => {
-    // Attempt to clear common cookie names used for storing the email.
-    const candidateNames = ['cb_email', 'email', 'user_email'];
-    const expirers = (name: string) => {
-      const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
-      const base = `${name}=; expires=${expires}; path=/; SameSite=Lax`;
-      // Try default domain and parent domain
-      const host = window.location.hostname;
-      const parts = host.split('.');
-      const domains = new Set<string>([
-        host,
-        parts.length > 1 ? `.${parts.slice(-2).join('.')}` : host,
-      ]);
+  const clearClientStorage = () => {
+    // Kill common cookie names (best-effort)
+    const names = ['session', 'cb_email', 'email', 'user_email'];
+    const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
+    const host = window.location.hostname;
+    const parts = host.split('.');
+    const domains = new Set<string>([
+      host,
+      parts.length >= 2 ? `.${parts.slice(-2).join('.')}` : host,
+    ]);
+
+    for (const name of names) {
+      // no Domain=
+      document.cookie = `${name}=; Expires=${expires}; Path=/; SameSite=Lax; Secure`;
+      // with Domain= variants
       domains.forEach((d) => {
-        document.cookie = `${base}; domain=${d}`;
+        document.cookie = `${name}=; Expires=${expires}; Path=/; Domain=${d}; SameSite=Lax; Secure`;
       });
-      // Also try without domain attr
-      document.cookie = base;
-    };
-    candidateNames.forEach(expirers);
+    }
+
+    // Clear common localStorage keys
+    try {
+      ['cb_email', 'email', 'user_email'].forEach((k) => localStorage.removeItem(k));
+    } catch {}
+
+    // Nudge any listeners that depend on storage changes
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'email', newValue: null }));
+    } catch {}
   };
 
   const handleClear = async () => {
+    // Clear server-side session (if used)
     try {
-      // If you add this endpoint in your worker, it should clear the HttpOnly cookie.
-      await fetch('/api/clear-email', { method: 'POST', credentials: 'include' });
-    } catch {
-      // ignore network/endpoint absence
-    }
-    // Always attempt client-side clear as a fallback
-    clearCookiesClientSide();
+      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+    } catch {}
+    // Aggressive client cleanup
+    clearClientStorage();
     onCleared();
   };
 
+  if (!email) return null;
+
   return (
     <div
-      className={`inline-flex items-center justify-center gap-2 rounded-full border px-3 py-1 text-sm bg-gray-100 text-gray-800 ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm bg-gray-100 text-gray-800 ${className}`}
       role="status"
       aria-live="polite"
     >
@@ -94,43 +95,23 @@ function EmailBadge({
 }
 
 export default function Downloads() {
-  const [username, setUsername] = useState<string | null>(null);
+  // IMPORTANT: read from the same client store the corner badge uses
+  const [email, setEmail] = useState<string>(() => getEmail() || '');
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/me', { credentials: 'include' });
-        if (!res.ok) {
-          if (!cancelled) setUsername(null);
-          return;
-        }
-        const data: MeResponse = await res.json();
-        if (!cancelled) setUsername(data.username ?? null);
-      } catch {
-        if (!cancelled) setUsername(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const off = onEmailChange((e: string | null | undefined) => setEmail(e || ''));
+    return () => { try { off && off(); } catch {} };
   }, []);
+
+  // Optional: marker to prove this is the file in use
+  // useEffect(() => { console.log('Downloads page: email =', email); }, [email]);
 
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
       <div className="container mx-auto px-6">
         <div className="text-center mb-12">
           {/* Email shown ABOVE the title, with an '×' to clear */}
-          {username && (
-            <EmailBadge
-              email={username}
-              onCleared={() => {
-                // Immediately reflect cleared state in UI
-                setUsername(null);
-              }}
-              className="mb-3"
-            />
-          )}
+          <EmailBadge email={email} onCleared={() => setEmail('')} className="mb-3" />
 
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Resources &amp; Downloads
@@ -146,7 +127,6 @@ export default function Downloads() {
             Click on an item to download it:
           </h3>
 
-          {/* Buttons */}
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
             <DownloadLink
               href="/assets/Chris-Brighouse-CV.pdf"
