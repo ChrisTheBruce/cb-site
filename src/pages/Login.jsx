@@ -21,21 +21,31 @@ export default function Login() {
     try {
       const res = await fetch("/api/login", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "accept": "application/json",
+        },
         body: JSON.stringify({ username, password }),
-        credentials: "include", // allows cookie to be set
+        credentials: "include", // allow HttpOnly cookie
       });
 
-      if (res.ok) {
-        // success: HttpOnly cookie set by server
-        nav("/chat"); // change this if your chat route is named differently
-      } else if (res.status === 401) {
-        const data = await res.json().catch(() => ({}));
-        setErr(data && data.error ? data.error : "Invalid credentials.");
-      } else {
-        setErr("Login failed (" + res.status + ").");
+      // MUST return JSON { ok: true } to proceed.
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        // If the server returned HTML (like index.html), treat as failure.
+        data = null;
       }
-    } catch (err) {
+
+      if (res.ok && data && data.ok === true) {
+        nav("/chat"); // adjust if your chat route differs
+      } else if (res.status === 401) {
+        setErr((data && data.error) || "Invalid credentials.");
+      } else {
+        setErr("Login failed" + (res.status ? ` (${res.status})` : "") + ".");
+      }
+    } catch {
       setErr("Network error. Try again.");
     } finally {
       setBusy(false);
@@ -45,7 +55,7 @@ export default function Login() {
   return (
     <div style={{ maxWidth: 420, margin: "64px auto", padding: 24 }}>
       <h1 style={{ marginBottom: 16 }}>Login</h1>
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} noValidate>
         <label style={{ display: "block", marginBottom: 8 }}>
           <span>Username</span>
           <input
