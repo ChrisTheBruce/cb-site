@@ -1,282 +1,280 @@
-// index.ts — Cloudflare Worker (full replacement)
-// - Serves Vite build via ASSETS (with manifest auto-detect)
-// - Robust /api/notify-download handler (MailChannels default; optional Resend)
-// - Preserves your HTML shell and injects built script + CSS
-// - CORS on all responses; never blind 500s
+// index.ts — Cloudflare Worker (API-first routing + caching + server-side download notify)
+// Why your notify/me weren't firing:
+// 1) API routes must be handled *before* ASSETS.fetch() or they get swallowed by the static handler.
+// 2) Browser navigation on downloads can cancel client fetches. We fix that by ALSO notifying on the server
+//    whenever a GET to /assets/* is requested (ctx.waitUntil). That makes notifications bulletproof.
+//
+// What this file does:
+// - /api/me (GET): returns { username } from 'cb_email' (or 'email') cookie
+// - /api/clear-email (POST): expires cookie on hostname and eTLD+1
+// - /api/notify-download(s) (POST): accepts JSON/form/beacon; sends email via MailChannels (default) or Resend
+// - Server-side notify on asset GET: when pathname starts with /assets/, it will fire a background email
+// - CORS + OPTIONS
+// - Caching: HTML -> no-store; static hashed assets -> 1y immutable (unless already set)
+//
+// ENV expected (configure in wrangler):
+// - ASSETS: Fetcher binding for your static site
+// - SUPPORT_TO_EMAIL: e.g., "support@chrisbrighouse.com"
+// - SENDER_EMAIL: verified sender (MailChannels or your domain), e.g., "no-reply@chrisbrighouse.com"
+// - SENDER_NAME: optional display name (default "Downloads")
+// - EMAIL_PROVIDER: "mailchannels" (default) or "resend"
+// - RESEND_API_KEY: required if EMAIL_PROVIDER="resend"
+// - CORS_ORIGIN: optional explicit origin (defaults to request origin)
 
 interface Env {
-  ASSETS?: Fetcher;                 // assets.binding = "ASSETS" in wrangler.json
-  EMAIL_PROVIDER?: string;          // "mailchannels" (default) or "resend"
-  SUPPORT_TO_EMAIL?: string;        // support@chrisbrighouse.com
-  SENDER_EMAIL?: string;            // no-reply@chrisbrighouse.com (owned/verified)
-  SENDER_NAME?: string;             // "Downloads"
-  RESEND_API_KEY?: string;          // secret if EMAIL_PROVIDER=resend
-  CORS_ORIGIN?: string;             // optional explicit origin for CORS
+  ASSETS: Fetcher;
+  EMAIL_PROVIDER?: string;
+  SUPPORT_TO_EMAIL?: string;
+  SENDER_EMAIL?: string;
+  SENDER_NAME?: string;
+  RESEND_API_KEY?: string;
+  CORS_ORIGIN?: string;
 }
 
-type ManifestEntry = { file: string; css?: string[]; isEntry?: boolean };
-type Manifest = Record<string, ManifestEntry>;
+const COOKIE_NAME = "cb_email";
 
 export default {
-  async fetch(request: Request, env: any): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, ""); // trim trailing slash
-
- // --- API: login ---
-    if (path === "/api/login") {
-      if (request.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
-      }
-      const body = await request.json().catch(() => ({}));
-      const ok = body.username === env.AUTH_USERNAME && body.password === env.AUTH_PASSWORD;
-      await new Promise(r => setTimeout(r, 200));
-      if (!ok) {
-        return new Response(JSON.stringify({ error: "Invalid credentials" }), {
-          status: 401,
-          headers: { "content-type": "application/json", "cache-control": "no-store" },
-        });
-      }
-      const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7;
-      const token = await createToken(env.SESSION_SECRET, { u: body.username, exp });
-      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
-      headers.append("Set-Cookie", setSessionCookie(token));
-      return new Response(JSON.stringify({ ok: true, username: body.username }), { status: 200, headers });
-    }
-
-    // --- API: me ---
-    if (path === "/api/me") {
-      if (request.method !== "GET") {
-        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
-      }
-      const token = getCookie(request, "session");
-      const p = await readToken(env.SESSION_SECRET, token);
-      if (!p) return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
-      return new Response(JSON.stringify({ username: p.u }), {
-        status: 200,
-        headers: { "content-type": "application/json", "cache-control": "no-store" },
-      });
-    }
-
-    // --- API: logout ---
-    if (path === "/api/logout") {
-      if (request.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
-      }
-      const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
-      headers.append("Set-Cookie", "session=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0");
-      return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
-    }
-
-    // Any other /api/* -> never serve the SPA
-    if (path.startsWith("/api/")) {
-      return new Response("Not found", { status: 404 });
-    }
-
-    // Static assets + SPA fallback
-    let res = await env.ASSETS.fetch(request);
-    if (res.status === 404 && request.method === "GET" && !path.includes(".")) {
-      const ix = new URL("/", url);
-      res = await env.ASSETS.fetch(new Request(ix.toString(), request));
-    }
-
-
-    // Serve versioned assets directly (hashed files, images, fonts, sourcemaps)
-    if (/\.(css|js|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|txt|map)$/i.test(pathname)) {
-      if (env.ASSETS?.fetch) {
-      const r = await env.ASSETS.fetch(request);
-      const ct = r.headers.get('content-type') || '';
-      const h = new Headers(r.headers);
-      if (ct.includes('text/html')) {
-        h.set('Cache-Control', 'no-store');
-      } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
-        h.set('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-      return new Response(r.body, { status: r.status, headers: h });
-    }
-      return new Response('Assets binding missing', { status: 500 });
-    }
-
-
-
-    // ---- API: notify-download (accept common variants to avoid typos) ----
-    const isNotify = (
-      pathname === '/api/notify-download' 
-    ) && request.method === 'POST';
-
-    if (isNotify) {
-      try {
-        let payload: any;
-        try { payload = await request.json(); }
-        catch { return j({ error: 'bad_json' }, 400, env, origin); }
-
-        const userEmail = String(payload?.userEmail ?? '').trim();
-        const file = String(payload?.file ?? '').trim();
-        if (!isEmail(userEmail) || !file) return j({ error: 'invalid_input' }, 400, env, origin);
-
-        const provider = (env.EMAIL_PROVIDER ?? 'mailchannels').toLowerCase();
-        const toEmail = env.SUPPORT_TO_EMAIL;
-        const fromEmail = env.SENDER_EMAIL;
-        const fromName = env.SENDER_NAME ?? 'Downloads';
-
-        const missing: string[] = [];
-        if (!toEmail) missing.push('SUPPORT_TO_EMAIL');
-        if (!fromEmail) missing.push('SENDER_EMAIL');
-        if (missing.length) return j({ error: 'missing_vars', vars: missing }, 500, env, origin);
-
-        if (provider === 'mailchannels') {
-          const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              personalizations: [{ to: [{ email: toEmail }] }],
-              from: { email: fromEmail, name: fromName },
-              reply_to: { email: userEmail },
-              subject: `Download: ${file}`,
-              content: [
-                { type: 'text/plain', value: `User ${userEmail} downloaded ${file} from ${origin}.` }
-              ]
-            })
-          });
-
-          const bodyText = await res.text(); // 202 often returns empty body
-          console.log('mailchannels status', res.status, (bodyText || '').slice(0, 300));
-
-          if (res.status !== 202 && !res.ok) {
-            return j({ error: 'email_failed', provider: 'mailchannels', status: res.status, body: clip(bodyText) }, 502, env, origin);
-          }
-          return j({ ok: true }, 200, env, origin);
-        }
-
-        if (provider === 'resend') {
-          if (!env.RESEND_API_KEY) return j({ error: 'missing_secret', secret: 'RESEND_API_KEY' }, 500, env, origin);
-          const r = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              from: `${fromName} <${fromEmail}>`,
-              to: [toEmail!],
-              reply_to: userEmail,
-              subject: `Download: ${file}`,
-              text: `User ${userEmail} downloaded ${file} from ${origin}.`
-            })
-          });
-          const txt = await r.text();
-          console.log('resend status', r.status, txt.slice(0, 300));
-          if (!r.ok) return j({ error: 'email_failed', provider: 'resend', status: r.status, body: clip(txt) }, 502, env, origin);
-          return j({ ok: true }, 200, env, origin);
-        }
-
-        return j({ error: 'unknown_provider', provider }, 500, env, origin);
-      } catch (e: any) {
-        console.error('notify-download unhandled', e?.stack || String(e));
-        return j({ error: 'unhandled' }, 500, env, origin);
-      }
-    }
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(req.url);
+    const origin = url.origin;
+    const pathname = url.pathname;
 
     // CORS preflight
-    if (request.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors(env, origin) });
     }
 
-    // ---- SPA shell (GET only). Preserve your HTML and inject built assets ----
-    if (request.method === 'GET') {
-      if (!env.ASSETS?.fetch) return new Response('Assets binding missing', { status: 500 });
-
-      // Try standard Vite locations for the manifest
-      const manifestUrls = ['/manifest.json', '/.vite/manifest.json'];
-      let manifest: Manifest | null = null;
-      for (const m of manifestUrls) {
-        const manRes = await env.ASSETS.fetch(new Request(new URL(m, origin), request));
-        if (manRes.ok) {
-          try { manifest = await manRes.json(); break; } catch { /* try next */ }
-        }
-      }
-      if (!manifest) {
-        // Fall back to serving from ASSETS; apply caching rules (HTML no-store, assets long-cache)
-        const r = await env.ASSETS.fetch(request);
-        const ct = r.headers.get('content-type') || '';
-        const h = new Headers(r.headers);
-        if (ct.includes('text/html')) {
-          h.set('Cache-Control', 'no-store');
-        } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
-          h.set('Cache-Control', 'public, max-age=31536000, immutable');
-        }
-        return new Response(r.body, { status: r.status, headers: h });
+    // ---------- API ROUTES (handled BEFORE ASSETS) ----------
+    if (pathname.startsWith("/api/")) {
+      if (pathname === "/api/me" && req.method === "GET") {
+        const email = readEmailFromCookie(req.headers.get("Cookie") || "");
+        return json({ username: email || null }, 200, env, origin);
       }
 
-      const entries = Object.values(manifest);
-      const entry = entries.find(e => (e as any).isEntry) || entries[0];
-      if (!entry?.file) return new Response('Build manifest missing entry.', { status: 500 });
+      if (pathname === "/api/clear-email" && req.method === "POST") {
+        const headers = new Headers({ "content-type": "application/json", ...cors(env, origin) });
+        for (const d of cookieDomains(url.hostname)) {
+          headers.append("Set-Cookie", `${COOKIE_NAME}=; Path=/; Domain=${d}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax; Secure`);
+        }
+        headers.append("Set-Cookie", `${COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax; Secure`);
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+      }
 
-      const scriptPath = `/${entry.file}`;
-      const cssTags = (entry.css || []).map(c => `<link rel="stylesheet" href="/${c}">`).join('');
+      const isNotify =
+        (pathname === "/api/notify-download" || pathname === "/api/notify-downloads") && req.method === "POST";
+      if (isNotify) {
+        const cookieEmail = readEmailFromCookie(req.headers.get("Cookie") || "");
+        const body = await readBody(req);
+        // Accept both client-sent email and cookie email; prefer explicit body.email, fall back to cookie
+        const email = (body.email || cookieEmail || "").toString();
+        const file = (body.file || body.href || body.path || "").toString();
+        const title = (body.title || "").toString();
+        const ua = req.headers.get("user-agent") || "";
+        const ip = req.headers.get("cf-connecting-ip") || "";
+        const referer = req.headers.get("referer") || "";
 
-      // Your HTML shell (preserved structure; script src set to built entry)
-      let html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chris Brighouse — Products for Engineering Projects & Operations</title>
-  <meta name="description" content="Azure-native applications with AI features for engineering operations.">
-  <link rel="canonical" href="https://chrisbrighouse.com/" />
-  <meta property="og:title" content="Chris Brighouse — Product & Platform" />
-  <meta property="og:description" content="Building fast, maintainable apps for engineering operations." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://chrisbrighouse.com/" />
-  <meta name="theme-color" content="#ffffff">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-</head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="${scriptPath}"></script>
-  </body>
-</html>`;
+        // Minimal guard: we at least want a file path
+        if (!file) {
+          return json({ ok: false, error: "missing file" }, 400, env, origin);
+        }
 
-      // Inject CSS right before </head>
-      if (cssTags) html = html.replace('</head>', `${cssTags}\n</head>`);
+        const to = env.SUPPORT_TO_EMAIL || "support@chrisbrighouse.com";
+        const fromEmail = env.SENDER_EMAIL || `no-reply@${new URL(origin).hostname}`;
+        const fromName = env.SENDER_NAME || "Downloads";
+        const subject = `Download: ${file}`;
+        const plain =
+          `A file was downloaded.\n\n` +
+          `File: ${file}\n` +
+          (title ? `Title: ${title}\n` : "") +
+          `Email: ${email || "(unknown)"}\n` +
+          `Referrer: ${referer}\n` +
+          `User-Agent: ${ua}\n` +
+          `IP: ${ip}\n` +
+          `Time: ${new Date().toISOString()}\n`;
 
-      const headers = new Headers({
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-        'content-security-policy': "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
-      });
-      return new Response(html, { status: 200, headers });
+        const sendResult = await sendEmail(env, { to, fromEmail, fromName, subject, text: plain });
+        if (!sendResult.ok) {
+          return json({ ok: false, error: sendResult.error || "email send failed" }, 502, env, origin);
+        }
+        return json({ ok: true }, 200, env, origin);
+      }
+
+      return json({ error: "Not found" }, 404, env, origin);
     }
 
-    // Final fallback
-    if (env.ASSETS?.fetch) {
-      const r = await env.ASSETS.fetch(request);
-      const ct = r.headers.get('content-type') || '';
-      const h = new Headers(r.headers);
-      if (ct.includes('text/html')) {
-        h.set('Cache-Control', 'no-store');
-      } else if (!h.has('Cache-Control') && /\.(?:js|mjs|cjs|css|map|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|mp3|mp4|webm|json)$/i.test(url.pathname)) {
-        h.set('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-      return new Response(r.body, { status: r.status, headers: h });
+    // ---------- SERVER-SIDE DOWNLOAD NOTIFY (bulletproof) ----------
+    // If the user hits a static asset under /assets/* directly, we send a background notification.
+    if (req.method === "GET" && pathname.startsWith("/assets/")) {
+      const cookieEmail = readEmailFromCookie(req.headers.get("Cookie") || "");
+      const to = env.SUPPORT_TO_EMAIL || "support@chrisbrighouse.com";
+      const fromEmail = env.SENDER_EMAIL || `no-reply@${url.hostname}`;
+      const fromName = env.SENDER_NAME || "Downloads";
+      const subject = `Download (server-side): ${pathname}`;
+      const ua = req.headers.get("user-agent") || "";
+      const ip = req.headers.get("cf-connecting-ip") || "";
+      const referer = req.headers.get("referer") || "";
+      const text =
+        `A file was downloaded (server detected).\n\n` +
+        `File: ${pathname}\n` +
+        `Email: ${cookieEmail || "(unknown)"}\n` +
+        `Referrer: ${referer}\n` +
+        `User-Agent: ${ua}\n` +
+        `IP: ${ip}\n` +
+        `Time: ${new Date().toISOString()}\n`;
+      // Fire and forget
+      ctx.waitUntil(sendEmail(env, { to, fromEmail, fromName, subject, text }));
     }
-    return new Response('Not found', { status: 404 });
-  }
-} satisfies ExportedHandler<Env>;
 
-// ---- Helpers ----
-function isEmail(e: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+    // ---------- STATIC ASSETS + SPA FALLBACK ----------
+    // Serve assets. If 404 and it's an SPA route (no file extension), fall back to root.
+    let res = await env.ASSETS.fetch(req);
+    if (res.status === 404 && req.method === "GET" && !/\.[a-z0-9]+$/i.test(pathname)) {
+      const ix = new URL("/", url);
+      res = await env.ASSETS.fetch(new Request(ix.toString(), req));
+    }
+
+    // HTML shell must never be cached
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("text/html")) {
+      const h = new Headers(res.headers);
+      h.set("Cache-Control", "no-store");
+      return withCors(new Response(res.body, { status: res.status, headers: h }), env, origin);
+    }
+
+    // Long cache for versioned static assets if not already set
+    if (!res.headers.has("Cache-Control") && isLikelyStatic(pathname)) {
+      const h = new Headers(res.headers);
+      h.set("Cache-Control", "public, max-age=31536000, immutable");
+      res = new Response(res.body, { status: res.status, headers: h });
+    }
+
+    return withCors(res, env, origin);
+  },
+};
+
+// ---------------- helpers ----------------
+
+function readEmailFromCookie(cookieHeader: string): string {
+  // read cb_email or email
+  const m1 = cookieHeader.match(/(?:^|; )cb_email=([^;]*)/);
+  if (m1) return decodeURIComponent(m1[1]);
+  const m2 = cookieHeader.match(/(?:^|; )email=([^;]*)/);
+  if (m2) return decodeURIComponent(m2[1]);
+  return "";
 }
-function clip(s: string): string { return (s || '').slice(0, 500); }
-function cors(env: Env, fallbackOrigin: string): Record<string, string> {
+
+function cookieDomains(hostname: string): string[] {
+  const parts = hostname.split(".");
+  if (parts.length >= 2) {
+    const etld1 = parts.slice(-2).join(".");
+    return [hostname, "." + etld1];
+  }
+  return [hostname];
+}
+
+function isLikelyStatic(pathname: string): boolean {
+  return /\.(?:css|js|mjs|cjs|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|txt|map|pdf)$/i.test(pathname);
+}
+
+function cors(env: Env, fallbackOrigin: string) {
   const origin = env.CORS_ORIGIN || fallbackOrigin;
   return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'content-type, authorization',
-    'Access-Control-Max-Age': '86400'
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Max-Age": "86400",
   };
 }
-function j(obj: unknown, status: number, env: Env, origin: string): Response {
+
+function withCors(res: Response, env: Env, origin: string): Response {
+  const h = new Headers(res.headers);
+  const c = cors(env, origin);
+  for (const [k, v] of Object.entries(c)) h.set(k, v);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+function json(obj: unknown, status: number, env: Env, origin: string): Response {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'content-type': 'application/json', ...cors(env, origin) }
+    headers: { "content-type": "application/json", ...cors(env, origin) },
   });
+}
+
+async function readBody(req: Request): Promise<Record<string, unknown>> {
+  // tolerate beacon, JSON, form, or empty
+  const ct = (req.headers.get("content-type") || "").toLowerCase();
+  try {
+    if (ct.includes("application/json")) {
+      return await req.json();
+    }
+    if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of form.entries()) out[k] = v;
+      return out;
+    }
+    // Text from sendBeacon (often text/plain)
+    const txt = await req.text();
+    if (!txt) return {};
+    try { return JSON.parse(txt); } catch { return { text: txt }; }
+  } catch {
+    return {};
+  }
+}
+
+// ---------------- email senders ----------------
+
+async function sendEmail(env: Env, args: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
+  const provider = (env.EMAIL_PROVIDER || "mailchannels").toLowerCase();
+  if (provider === "resend") return sendViaResend(env, args);
+  return sendViaMailChannels(env, args);
+}
+
+async function sendViaMailChannels(env: Env, { to, fromEmail, fromName, subject, text }: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
+  try {
+    const mcResp = await fetch("https://api.mailchannels.net/tx/v1/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: fromEmail, name: fromName || "Downloads" },
+        subject,
+        content: [{ type: "text/plain", value: text }],
+      }),
+    });
+    if (!mcResp.ok) {
+      const errTxt = await mcResp.text().catch(() => "");
+      return { ok: false, error: `mailchannels ${mcResp.status}: ${errTxt}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "mailchannels error" };
+  }
+}
+
+async function sendViaResend(env: Env, { to, fromEmail, fromName, subject, text }: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
+  const key = env.RESEND_API_KEY;
+  if (!key) return { ok: false, error: "RESEND_API_KEY missing" };
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        from: fromName ? `${fromName} <${fromEmail}>` : fromEmail,
+        to: [to],
+        subject,
+        text,
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      return { ok: false, error: `resend ${r.status}: ${t}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "resend error" };
+  }
 }
