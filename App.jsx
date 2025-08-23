@@ -10,11 +10,6 @@ import Experience from './components/Experience';
 import Contact from './components/Contact';
 import HomeHero from './components/HomeHero/HomeHero';
 import UserAccountBadge from './components/UserAccountBadge.jsx';
-
-// If you've created these pages per our plan, keep these imports.
-// Otherwise, you can add them later.
-//   src/pages/Login.jsx
-//   src/pages/Chat.jsx
 import Login from './src/pages/Login.jsx';
 import Chat from './src/pages/Chat.jsx';
 

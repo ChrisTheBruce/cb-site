@@ -24,6 +24,75 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
 
 type MeResponse = { username?: string };
 
+/**
+ * --- Email badge with "×" to clear ---
+ * - Tries server endpoint POST /api/clear-email (optional to implement).
+ * - Falls back to deleting likely cookie names client-side.
+ * - Notifies parent via onCleared().
+ */
+function EmailBadge({
+  email,
+  onCleared,
+  className = '',
+}: {
+  email: string;
+  onCleared: () => void;
+  className?: string;
+}) {
+  const clearCookiesClientSide = () => {
+    // Attempt to clear common cookie names used for storing the email.
+    const candidateNames = ['cb_email', 'email', 'user_email'];
+    const expirers = (name: string) => {
+      const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
+      const base = `${name}=; expires=${expires}; path=/; SameSite=Lax`;
+      // Try default domain and parent domain
+      const host = window.location.hostname;
+      const parts = host.split('.');
+      const domains = new Set<string>([
+        host,
+        parts.length > 1 ? `.${parts.slice(-2).join('.')}` : host,
+      ]);
+      domains.forEach((d) => {
+        document.cookie = `${base}; domain=${d}`;
+      });
+      // Also try without domain attr
+      document.cookie = base;
+    };
+    candidateNames.forEach(expirers);
+  };
+
+  const handleClear = async () => {
+    try {
+      // If you add this endpoint in your worker, it should clear the HttpOnly cookie.
+      await fetch('/api/clear-email', { method: 'POST', credentials: 'include' });
+    } catch {
+      // ignore network/endpoint absence
+    }
+    // Always attempt client-side clear as a fallback
+    clearCookiesClientSide();
+    onCleared();
+  };
+
+  return (
+    <div
+      className={`inline-flex items-center justify-center gap-2 rounded-full border px-3 py-1 text-sm bg-gray-100 text-gray-800 ${className}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="font-medium">{email}</span>
+      <button
+        type="button"
+        onClick={handleClear}
+        className="ml-1 leading-none hover:opacity-70"
+        aria-label="Clear email"
+        title="Clear email"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export default function Downloads() {
   const [username, setUsername] = useState<string | null>(null);
 
@@ -51,14 +120,21 @@ export default function Downloads() {
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
       <div className="container mx-auto px-6">
         <div className="text-center mb-12">
+          {/* Email shown ABOVE the title, with an '×' to clear */}
+          {username && (
+            <EmailBadge
+              email={username}
+              onCleared={() => {
+                // Immediately reflect cleared state in UI
+                setUsername(null);
+              }}
+              className="mb-3"
+            />
+          )}
+
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Resources &amp; Downloads
           </h2>
-
-          {/* Signed-in email shown directly under the title */}
-          {username && (
-            <p className="mt-2 text-sm text-gray-600">{username}</p>
-          )}
 
           <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">
             Click to download more information on my services
@@ -69,8 +145,6 @@ export default function Downloads() {
           <h3 className="font-semibold text-lg text-gray-800 mb-4">
             Click on an item to download it:
           </h3>
-          <p className="text-gray-600">
-          </p>
 
           {/* Buttons */}
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
