@@ -96,10 +96,7 @@ export default {
       return new Response('Assets binding missing', { status: 500 });
     }
 
-    // CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: cors(env, origin) });
-    }
+
 
     // ---- API: notify-download (accept common variants to avoid typos) ----
     const isNotify = (
@@ -174,6 +171,11 @@ export default {
         console.error('notify-download unhandled', e?.stack || String(e));
         return j({ error: 'unhandled' }, 500, env, origin);
       }
+    }
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: cors(env, origin) });
     }
 
     // ---- SPA shell (GET only). Preserve your HTML and inject built assets ----
