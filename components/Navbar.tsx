@@ -1,13 +1,24 @@
 // components/Navbar.tsx
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // Build anchors that work both on "/" and other routes.
   const hrefFor = (id: string) => (location.pathname === "/" ? `#${id}` : `/#${id}`);
   const skipHref = location.pathname === "/" ? "#main" : "/#main";
+
+  const goHome: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
+    // Prefer SPA navigation; fall back to normal link if Router isn't active
+    try {
+      e.preventDefault();
+      if (location.pathname !== "/") navigate("/");
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      /* no-op: let the native anchor work */
+    }
+  };
 
   return (
     <>
@@ -20,32 +31,22 @@ export default function Navbar() {
 
       <header className="sticky top-0 z-40 backdrop-blur bg-white/70 border-b">
         <nav className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between">
-          {/* Brand: use Link so it SPA-navigates home reliably */}
-          <Link to="/" className="font-semibold tracking-tight hover:opacity-80">
+          {/* Brand: always returns to Home */}
+          <a href="/" onClick={goHome} className="font-semibold tracking-tight hover:opacity-80">
             Chris Brighouse
-          </Link>
+          </a>
 
-          {/* Main menu */}
           <div className="hidden sm:flex gap-6 text-sm">
-            <a href={hrefFor("experience")} className="hover:underline">
-              Experience
-            </a>
-            <a href={hrefFor("work")} className="hover:underline">
-              Work
-            </a>
-            <a href={hrefFor("downloads")} className="hover:underline">
-              Downloads
-            </a>
-            <a href={hrefFor("contact")} className="hover:underline">
-              Contact
-            </a>
+            <a href={hrefFor("experience")} className="hover:underline">Experience</a>
+            <a href={hrefFor("work")} className="hover:underline">Work</a>
+            <a href={hrefFor("downloads")} className="hover:underline">Downloads</a>
+            <a href={hrefFor("contact")} className="hover:underline">Contact</a>
           </div>
 
-          {/* Right-end: Login */}
           <div className="flex items-center">
-            <Link to="/login" className="px-3 py-1 border rounded text-sm hover:bg-slate-50">
+            <a href="/login" className="px-3 py-1 border rounded text-sm hover:bg-slate-50">
               Login
-            </Link>
+            </a>
           </div>
         </nav>
       </header>
