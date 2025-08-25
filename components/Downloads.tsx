@@ -2,7 +2,7 @@
 import React from "react";
 import { useDownloadEmail }from "../src/context/DownloadEmailContext"
 
-import DownloadButton from "./DownloadButton";
+import DownloadButton from "../src/components/DownloadButton";
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
