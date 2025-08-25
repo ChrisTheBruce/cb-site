@@ -1,5 +1,5 @@
 // Navbar.tsx — full replacement
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 
 export default function Navbar() {
@@ -7,29 +7,27 @@ export default function Navbar() {
   const location = useLocation();
   const [signedIn, setSignedIn] = useState(false);
 
-  const refreshAuth = useCallback(async () => {
+  async function refreshAuth() {
     try {
-      const r = await fetch("/api/me", { credentials: "include", cache: "no-store" });
+      const r = await fetch("/api/me", { credentials: "include" });
       setSignedIn(r.ok);
     } catch {
       setSignedIn(false);
     }
-  }, []);
+  }
 
-  useEffect(() => { refreshAuth(); }, [refreshAuth, location.pathname]);
+  // Check auth on mount and whenever the route changes
+  useEffect(() => {
+    refreshAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
+  // Listen for global auth changes (emitted after sign in/out)
   useEffect(() => {
     const onAuthChanged = () => refreshAuth();
-    const onFocusOrVisible = () => refreshAuth();
     window.addEventListener("auth:changed", onAuthChanged);
-    window.addEventListener("focus", onFocusOrVisible);
-    document.addEventListener("visibilitychange", onFocusOrVisible);
-    return () => {
-      window.removeEventListener("auth:changed", onAuthChanged);
-      window.removeEventListener("focus", onFocusOrVisible);
-      document.removeEventListener("visibilitychange", onFocusOrVisible);
-    };
-  }, [refreshAuth]);
+    return () => window.removeEventListener("auth:changed", onAuthChanged);
+  }, []);
 
   async function handleSignOut() {
     try {
@@ -50,19 +48,23 @@ export default function Navbar() {
     { to: "/downloads", label: "Downloads" },
   ];
 
+  const linkStyle: React.CSSProperties = { color: "#222", textDecoration: "none" };
+
   return (
-    <nav style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 12,
-      padding: "12px 20px",
-      borderBottom: "1px solid #eee",
-      background: "#f7fbfc",
-      position: "sticky",
-      top: 0,
-      zIndex: 100
-    }}>
+    <nav
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "12px 20px",
+        borderBottom: "1px solid #eee",
+        background: "#f7fbfc",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+      }}
+    >
       {/* Brand */}
       <div>
         <Link to="/" style={{ textDecoration: "none", fontWeight: 700, fontSize: 18, color: "#222" }}>
@@ -73,13 +75,13 @@ export default function Navbar() {
       {/* Menu */}
       <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
         {links.map((l) => (
-          <Link key={l.to} to={l.to} style={{ color: "#222", textDecoration: "none" }}>
+          <Link key={l.to} to={l.to} style={linkStyle}>
             {l.label}
           </Link>
         ))}
       </div>
 
-      {/* Auth button */}
+      {/* Auth button (single source of truth) */}
       <div>
         {signedIn ? (
           <button
@@ -89,7 +91,7 @@ export default function Navbar() {
               borderRadius: 8,
               border: "1px solid #ddd",
               background: "#fff",
-              cursor: "pointer"
+              cursor: "pointer",
             }}
           >
             Sign out
@@ -103,7 +105,7 @@ export default function Navbar() {
               border: "1px solid #0cc",
               background: "#0cc",
               color: "#fff",
-              cursor: "pointer"
+              cursor: "pointer",
             }}
           >
             Sign in
