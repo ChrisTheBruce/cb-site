@@ -1,4 +1,4 @@
-// Navbar.tsx
+// Navbar.tsx — full replacement
 import React, { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 
@@ -16,7 +16,6 @@ export default function Navbar() {
     }
   }, []);
 
-  // Check on mount, on route change, and when we get the custom event
   useEffect(() => { refreshAuth(); }, [refreshAuth, location.pathname]);
 
   useEffect(() => {
@@ -44,14 +43,25 @@ export default function Navbar() {
     nav("/login");
   }
 
+  const links = [
+    { to: "/work", label: "Work" },
+    { to: "/experience", label: "Experience" },
+    { to: "/contact", label: "Contact" },
+    { to: "/downloads", label: "Downloads" },
+  ];
+
   return (
     <nav style={{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
+      gap: 12,
       padding: "12px 20px",
       borderBottom: "1px solid #eee",
-      background: "#f7fbfc"
+      background: "#f7fbfc",
+      position: "sticky",
+      top: 0,
+      zIndex: 100
     }}>
       {/* Brand */}
       <div>
@@ -60,14 +70,16 @@ export default function Navbar() {
         </Link>
       </div>
 
-      {/* Menu items (stay visible) */}
-      <div style={{ display: "flex", gap: 16 }}>
-        <Link to="/downloads" style={{ color: "#222", textDecoration: "none" }}>Downloads</Link>
-        <Link to="/chat" style={{ color: "#222", textDecoration: "none" }}>Chat</Link>
-        {/* add/remove more links as needed */}
+      {/* Menu */}
+      <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+        {links.map((l) => (
+          <Link key={l.to} to={l.to} style={{ color: "#222", textDecoration: "none" }}>
+            {l.label}
+          </Link>
+        ))}
       </div>
 
-      {/* Auth button (single source of truth) */}
+      {/* Auth button */}
       <div>
         {signedIn ? (
           <button
