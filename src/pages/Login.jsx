@@ -10,7 +10,7 @@ export default function Login() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // If already logged in, bounce to chat
+    // If already signed in, go straight to chat
     (async () => {
       try {
         const r = await fetch("/api/me", { credentials: "include" });
@@ -32,18 +32,17 @@ export default function Login() {
       });
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
-        setError(data?.error || `Login failed (${r.status})`);
+        setError(data?.error || `Sign in failed (${r.status})`);
       } else {
         nav("/chat");
       }
-    } catch (err) {
+    } catch {
       setError("Network error");
     } finally {
       setBusy(false);
     }
   }
 
-  // Simple inline styles to guarantee visibility regardless of global CSS
   const inputStyle = {
     display: "block",
     width: "100%",
@@ -62,7 +61,7 @@ export default function Login() {
 
   return (
     <div style={{ maxWidth: 360, margin: "60px auto", padding: 24, border: "1px solid #eee", borderRadius: 12 }}>
-      <h1 style={{ margin: 0, marginBottom: 16, fontSize: 20 }}>Login</h1>
+      <h1 style={{ margin: 0, marginBottom: 16, fontSize: 20 }}>Sign in</h1>
 
       <form onSubmit={onSubmit} noValidate>
         <label style={labelStyle} htmlFor="username">Username</label>
@@ -99,7 +98,7 @@ export default function Login() {
             borderRadius: 6,
             border: "1px solid #1b6",
             background: busy ? "#9ee" : "#0cc",
-            color: "#033",
+            color: "#fff",
             cursor: busy ? "default" : "pointer",
           }}
         >
