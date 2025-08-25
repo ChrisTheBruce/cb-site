@@ -1,4 +1,4 @@
-// Login.jsx — swap in completely
+// Login.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,7 +10,6 @@ export default function Login() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // If already signed in, go straight to chat
     (async () => {
       try {
         const r = await fetch("/api/me", { credentials: "include" });
@@ -34,6 +33,8 @@ export default function Login() {
         const data = await r.json().catch(() => ({}));
         setError(data?.error || `Sign in failed (${r.status})`);
       } else {
+        // tell Navbar to refresh its state immediately
+        window.dispatchEvent(new Event("auth:changed"));
         nav("/chat");
       }
     } catch {
@@ -56,7 +57,6 @@ export default function Login() {
     background: "#fff",
     outline: "none",
   };
-
   const labelStyle = { fontSize: 14, color: "#333" };
 
   return (
@@ -96,7 +96,7 @@ export default function Login() {
             padding: "10px 12px",
             fontSize: 16,
             borderRadius: 6,
-            border: "1px solid #1b6",
+            border: "1px solid #0cc",
             background: busy ? "#9ee" : "#0cc",
             color: "#fff",
             cursor: busy ? "default" : "pointer",
