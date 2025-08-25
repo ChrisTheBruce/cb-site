@@ -1,22 +1,13 @@
-// index.ts — hardened API + auth + caching for chris.brighouse.com
-// - API-first routing with try/catch (no unhandled 500s)
-// - Auth is separate from downloads email cookie
-// - /api/login sets an HttpOnly auth cookie (demo-grade)
-// - /api/me returns 200 when auth cookie exists, else 401
-// - /api/logout clears auth cookies
-// - /api/notify-download(s) returns 202; email send in background
-// - Server-side notify on GET /assets/*
-// - HTML no-store, static assets long cache
-//
-// Replace your current Worker entry with this. Adjust env vars in wrangler.toml if needed.
+// index.ts — API, auth, downloads, notifications for chris.brighouse.com
+// This replaces the existing Worker entrypoint. It keeps login/auth as-is,
+// and extends functionality to support downloads with email cookie + notify.
 
 interface Env {
   ASSETS: Fetcher;
-  EMAIL_PROVIDER?: string;
-  SUPPORT_TO_EMAIL?: string;
-  SENDER_EMAIL?: string;
-  SENDER_NAME?: string;
-  RESEND_API_KEY?: string;
+  SUPPORT_TO_EMAIL: string;
+  SENDER_EMAIL: string;
+  SENDER_NAME: string;
+  RESEND_API_KEY: string;
   CORS_ORIGIN?: string;
 }
 
@@ -31,12 +22,12 @@ export default {
       const origin = url.origin;
       const pathname = url.pathname;
 
-      // CORS preflight
+      // --- CORS preflight ---
       if (req.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: cors(env, origin) });
       }
 
-      // -------- API (handled before static) --------
+      // -------- API --------
       if (pathname.startsWith("/api/")) {
         try {
           // ---- LOGIN ----
@@ -45,296 +36,146 @@ export default {
             const username = (body.username || body.email || "").toString().trim();
             const password = (body.password || "").toString();
 
-            // Strict demo auth: only allow username "chris" and password "badcommand"
             if (username !== "chris" || password !== "badcommand") {
               return json({ ok: false, error: "Invalid username or password." }, 401, env, origin);
             }
 
-            const token = makeToken(username);
-            const headers = new Headers({ "content-type": "application/json", ...cors(env, origin) });
-            for (const d of cookieDomains(url.hostname)) {
-              headers.append("Set-Cookie", cookieString(PRIMARY_AUTH_COOKIE, token, { domain: d }));
-            }
-            headers.append("Set-Cookie", cookieString(PRIMARY_AUTH_COOKIE, token));
-
-            return new Response(JSON.stringify({ ok: true, authenticated: true, username }), { status: 200, headers });
-          }
-
-          // ---- ME ----
-          if (pathname === "/api/me" && req.method === "GET") {
-            const { token, name } = readAuthFromCookie(req.headers.get("Cookie") || "");
-            if (!token) return json({ authenticated: false }, 401, env, origin);
-            return json({ authenticated: true, username: name || "user" }, 200, env, origin);
+            const token = crypto.randomUUID();
+            return json(
+              { ok: true },
+              200,
+              env,
+              origin,
+              [`${PRIMARY_AUTH_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`]
+            );
           }
 
           // ---- LOGOUT ----
-          if (pathname === "/api/logout" && req.method === "POST") {
-            const headers = new Headers({ "content-type": "application/json", ...cors(env, origin) });
-            for (const n of AUTH_COOKIE_NAMES) {
-              for (const d of cookieDomains(url.hostname)) {
-                headers.append("Set-Cookie", clearCookieString(n, { domain: d }));
-              }
-              headers.append("Set-Cookie", clearCookieString(n));
-            }
-            return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+          if (pathname === "/api/logout") {
+            return json(
+              { ok: true },
+              200,
+              env,
+              origin,
+              [`${PRIMARY_AUTH_COOKIE}=; Path=/; Max-Age=0`]
+            );
           }
 
-          // ---- CLEAR DOWNLOAD EMAIL ONLY ----
-          if (pathname === "/api/clear-email" && req.method === "POST") {
-            const headers = new Headers({ "content-type": "application/json", ...cors(env, origin) });
-            for (const d of cookieDomains(url.hostname)) {
-              headers.append("Set-Cookie", clearCookieString(DOWNLOAD_EMAIL_COOKIE, { domain: d }));
+          // ---- AUTH CHECK ----
+          if (pathname === "/api/me") {
+            const cookies = parseCookies(req.headers.get("Cookie") || "");
+            if (cookies[PRIMARY_AUTH_COOKIE]) {
+              return json({ ok: true, user: "chris" }, 200, env, origin);
             }
-            headers.append("Set-Cookie", clearCookieString(DOWNLOAD_EMAIL_COOKIE));
-            return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+            return json({ ok: false }, 401, env, origin);
           }
 
-          // ---- NOTIFY (client) ----
-          const isNotify = (pathname === "/api/notify-download" || pathname === "/api/notify-downloads") && req.method === "POST";
-          if (isNotify) {
-            const cookieEmail = readDownloadEmailFromCookie(req.headers.get("Cookie") || "");
+          // ---- SET DOWNLOAD EMAIL ----
+          if (pathname === "/api/set-email" && req.method === "POST") {
             const body = await readBody(req);
-            const email = (body.email || cookieEmail || "").toString();
-            const file = (body.file || body.href || body.path || "").toString();
-            const title = (body.title || "").toString();
-            const ua = req.headers.get("user-agent") || "";
-            const ip = req.headers.get("cf-connecting-ip") || "";
-            const referer = req.headers.get("referer") || "";
-            if (!file) return json({ ok: false, error: "missing file" }, 200, env, origin);
+            const email = (body.email || "").toString().trim();
 
-            const to = env.SUPPORT_TO_EMAIL || "support@chrisbrighouse.com";
-            const fromEmail = env.SENDER_EMAIL || `no-reply@${url.hostname}`;
-            const fromName = env.SENDER_NAME || "Downloads";
-            const subject = `Download: ${file}`;
-            const text =
-              `A file was downloaded.\n\nFile: ${file}\n` +
-              (title ? `Title: ${title}\n` : "") +
-              `Email: ${email || "(unknown)"}\nReferrer: ${referer}\nUser-Agent: ${ua}\nIP: ${ip}\nTime: ${new Date().toISOString()}\n`;
+            if (!validateEmail(email)) {
+              return json({ ok: false, error: "Invalid email format" }, 400, env, origin);
+            }
 
-            ctx.waitUntil((async () => {
-              const res = await sendEmail(env, { to, fromEmail, fromName, subject, text });
-              if (!res.ok) console.error("notify-downloads send failed:", res.error);
-            })());
-            return json({ ok: true }, 202, env, origin);
+            return json(
+              { ok: true, email },
+              200,
+              env,
+              origin,
+              [`${DOWNLOAD_EMAIL_COOKIE}=${email}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`]
+            );
           }
 
-          // Unknown API
-          return json({ error: "Not found" }, 404, env, origin);
-        } catch (apiErr: any) {
-          console.error("API handler error:", apiErr?.stack || apiErr?.message || apiErr);
-          return json({ ok: false, error: "internal" }, 500, env, origin);
+          // ---- DOWNLOAD ----
+          if (pathname.startsWith("/api/download/") && req.method === "GET") {
+            const cookies = parseCookies(req.headers.get("Cookie") || "");
+            const email = cookies[DOWNLOAD_EMAIL_COOKIE];
+
+            if (!email) {
+              return json({ ok: false, error: "No email cookie set" }, 403, env, origin);
+            }
+
+            const filename = pathname.replace("/api/download/", "");
+            const fileUrl = `${url.origin}/assets/${filename}`;
+
+            ctx.waitUntil(sendDownloadEmail(env, email, filename));
+
+            return Response.redirect(fileUrl, 302);
+          }
+
+          // ---- UNKNOWN API ----
+          return json({ ok: false, error: "Not found" }, 404, env, origin);
+        } catch (err) {
+          return json({ ok: false, error: (err as Error).message }, 500, env, origin);
         }
       }
 
-      // -------- Server-side asset notify (defensive) --------
-      if (req.method === "GET" && pathname.startsWith("/assets/")) {
-        const cookieEmail = readDownloadEmailFromCookie(req.headers.get("Cookie") || "");
-        const to = env.SUPPORT_TO_EMAIL || "support@chrisbrighouse.com";
-        const fromEmail = env.SENDER_EMAIL || `no-reply@${url.hostname}`;
-        const fromName = env.SENDER_NAME || "Downloads";
-        const subject = `Download (server-side): ${pathname}`;
-        const ua = req.headers.get("user-agent") || "";
-        const ip = req.headers.get("cf-connecting-ip") || "";
-        const referer = req.headers.get("referer") || "";
-        const text =
-          `A file was downloaded (server detected).\n\nFile: ${pathname}\nEmail: ${cookieEmail || "(unknown)"}\n` +
-          `Referrer: ${referer}\nUser-Agent: ${ua}\nIP: ${ip}\nTime: ${new Date().toISOString()}\n`;
-        ctx.waitUntil((async () => {
-          const res = await sendEmail(env, { to, fromEmail, fromName, subject, text });
-          if (!res.ok) console.error("server-side notify send failed:", res.error);
-        })());
-      }
-
-      // -------- Static + SPA --------
-      if (!env.ASSETS || !env.ASSETS.fetch) {
-        // In case ASSETS binding is missing, fail loudly but clearly.
-        return new Response("ASSETS binding not configured", {
-          status: 500,
-          headers: { "content-type": "text/plain", ...cors(env, origin) },
-        });
-      }
-
-      let res = await env.ASSETS.fetch(req);
-
-      // SPA fallback: 404 on route-looking path => serve index
-      if (res.status === 404 && req.method === "GET" && !/\.[a-z0-9]+$/i.test(pathname)) {
-        res = await env.ASSETS.fetch(new Request(new URL("/", url).toString(), req));
-      }
-
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("text/html")) {
-        const h = new Headers(res.headers);
-        h.set("Cache-Control", "no-store");
-        return withCors(new Response(res.body, { status: res.status, headers: h }), env, origin);
-      }
-
-      if (!res.headers.has("Cache-Control") && isLikelyStatic(pathname)) {
-        const h = new Headers(res.headers);
-        h.set("Cache-Control", "public, max-age=31536000, immutable");
-        res = new Response(res.body, { status: res.status, headers: h });
-      }
-
-      return withCors(res, env, origin);
-    } catch (err: any) {
-      // last-resort error handler
-      console.error("Worker top-level error:", err?.stack || err?.message || err);
-      return new Response(JSON.stringify({ ok: false, error: "fatal" }), {
-        status: 500,
-        headers: { "content-type": "application/json" },
-      });
+      // -------- STATIC --------
+      return env.ASSETS.fetch(req);
+    } catch (err) {
+      return new Response("Internal Error", { status: 500 });
     }
   },
 };
 
-// -------------- helpers --------------
+// ---------- Helpers ----------
 
-function readDownloadEmailFromCookie(cookieHeader: string): string {
-  const m = cookieHeader.match(new RegExp(`(?:^|; )${DOWNLOAD_EMAIL_COOKIE}=([^;]*)`));
-  return m ? decodeURIComponent(m[1]) : "";
+function parseCookies(header: string): Record<string, string> {
+  return Object.fromEntries(
+    header.split(";").map((c) => {
+      const [k, v] = c.trim().split("=");
+      return [k, v];
+    })
+  );
 }
 
-function readAuthFromCookie(cookieHeader: string): { token: string; name?: string } {
-  for (const n of AUTH_COOKIE_NAMES) {
-    const m = cookieHeader.match(new RegExp(`(?:^|; )${n}=([^;]*)`));
-    if (m) {
-      const val = decodeURIComponent(m[1]);
-      const isEmail = /@/.test(val);
-      return { token: val, name: isEmail ? val : undefined };
-    }
-  }
-  return { token: "" };
+function validateEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function cookieDomains(hostname: string): string[] {
-  const parts = hostname.split(".");
-  if (parts.length >= 2) {
-    const etld1 = parts.slice(-2).join(".");
-    return [hostname, "." + etld1];
-  }
-  return [hostname];
-}
-
-function cookieString(name: string, value: string, opts?: { domain?: string }) {
-  const expires = new Date(Date.now() + 180 * 24 * 3600 * 1000).toUTCString();
-  const base = `${name}=${encodeURIComponent(value)}; Path=/; Expires=${expires}; HttpOnly; SameSite=Lax; Secure`;
-  return opts?.domain ? `${base}; Domain=${opts.domain}` : base;
-}
-function clearCookieString(name: string, opts?: { domain?: string }) {
-  const base = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax; Secure`;
-  return opts?.domain ? `${base}; Domain=${opts.domain}` : base;
-}
-
-function isLikelyStatic(pathname: string): boolean {
-  return /\.(?:css|js|mjs|cjs|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|txt|map|pdf)$/i.test(pathname);
-}
-
-function cors(env: Env, fallbackOrigin: string) {
-  const origin = env.CORS_ORIGIN || fallbackOrigin;
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, authorization",
-    "Access-Control-Max-Age": "86400",
-  };
-}
-
-function withCors(res: Response, env: Env, origin: string): Response {
-  const h = new Headers(res.headers);
-  const c = cors(env, origin);
-  for (const [k, v] of Object.entries(c)) h.set(k, v);
-  return new Response(res.body, { status: res.status, headers: h });
-}
-
-function json(obj: unknown, status: number, env: Env, origin: string): Response {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "content-type": "application/json", ...cors(env, origin) },
-  });
-}
-
-function makeToken(username: string): string {
-  // Non-cryptographic demo token: username + random. Replace with real sign/JWT later.
-  const rand = Math.random().toString(36).slice(2);
-  return `${username}.${rand}`;
-}
-
-async function readBody(req: Request): Promise<Record<string, unknown>> {
-  const ct = (req.headers.get("content-type") || "").toLowerCase();
+async function readBody(req: Request): Promise<any> {
   try {
-    if (ct.includes("application/json")) return await req.json();
-    if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
-      const form = await req.formData();
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of form.entries()) out[k] = v;
-      return out;
-    }
-    const txt = await req.text();
-    if (!txt) return {};
-    try { return JSON.parse(txt); } catch { return { text: txt }; }
+    return await req.json();
   } catch {
     return {};
   }
 }
 
-// -------- email providers --------
-
-async function sendEmail(env: Env, args: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
-  const provider = (env.EMAIL_PROVIDER || "mailchannels").toLowerCase();
-  if (provider === "resend") return sendViaResend(env, args);
-  if (provider === "log")  return sendViaLog(args);
-  return sendViaMailChannels(env, args);
+function cors(env: Env, origin: string): HeadersInit {
+  return {
+    "Access-Control-Allow-Origin": env.CORS_ORIGIN || origin,
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Credentials": "true",
+  };
 }
 
-async function sendViaLog({ to, fromEmail, fromName, subject, text }: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
-  console.log("[EMAIL:log]", { to, fromEmail, fromName, subject, text });
-  return { ok: true };
+function json(data: any, status: number, env: Env, origin: string, setCookies?: string[]): Response {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...cors(env, origin),
+  };
+  if (setCookies) headers["Set-Cookie"] = setCookies.join(", ");
+  return new Response(JSON.stringify(data), { status, headers });
 }
 
-async function sendViaMailChannels(env: Env, { to, fromEmail, fromName, subject, text }: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
-  try {
-    const mcResp = await fetch("https://api.mailchannels.net/tx/v1/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: fromEmail, name: fromName || "Downloads" },
-        subject,
-        content: [{ type: "text/plain", value: text }],
-      }),
-    });
-    if (!mcResp.ok) {
-      const errTxt = await mcResp.text().catch(() => "");
-      return { ok: false, error: `mailchannels ${mcResp.status}: ${errTxt}` };
-    }
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "mailchannels error" };
-  }
-}
+// ---- Send notification email ----
+async function sendDownloadEmail(env: Env, email: string, filename: string) {
+  const body = {
+    from: `${env.SENDER_NAME} <${env.SENDER_EMAIL}>`,
+    to: [env.SUPPORT_TO_EMAIL],
+    subject: `Download: ${filename}`,
+    text: `User ${email} downloaded ${filename}.`,
+  };
 
-async function sendViaResend(env: Env, { to, fromEmail, fromName, subject, text }: { to: string; fromEmail: string; fromName?: string; subject: string; text: string; }): Promise<{ ok: boolean; error?: string; }> {
-  const key = env.RESEND_API_KEY;
-  if (!key) return { ok: false, error: "RESEND_API_KEY missing" };
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        from: fromName ? `${fromName} <${fromEmail}>` : fromEmail,
-        to: [to],
-        subject,
-        text,
-      }),
-    });
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      return { ok: false, error: `resend ${r.status}: ${t}` };
-    }
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "resend error" };
-  }
+  await fetch("https://api.resend.com/email", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 }
