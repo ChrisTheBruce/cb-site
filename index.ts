@@ -170,7 +170,7 @@ async function sendDownloadEmail(env: Env, email: string, filename: string) {
     text: `User ${email} downloaded ${filename}.`,
   };
 
-  await fetch("https://api.resend.com/email", {
+  await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
