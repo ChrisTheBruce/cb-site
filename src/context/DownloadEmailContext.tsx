@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+// src/context/DownloadEmailContext.tsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 type DownloadEmailContextType = {
   email: string | null;
@@ -12,38 +13,50 @@ const DownloadEmailContext = createContext<DownloadEmailContextType>({
   clearEmail: () => {},
 });
 
+const EMAIL_COOKIE = "cb_dl_email";
+const ONE_YEAR = 60 * 60 * 24 * 365;
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function writeCookie(name: string, value: string, maxAgeSeconds: number) {
+  if (typeof document === "undefined") return;
+  const secure = location.protocol === "https:" ? "Secure; " : "";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSeconds}; Path=/; ${secure}SameSite=Lax`;
+}
+
+function clearCookie(name: string) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+}
+
 export const DownloadEmailProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [email, setEmailState] = useState<string | null>(null);
 
+  // Load from cookie on mount
   useEffect(() => {
-    // Try to load email from cookie (server sets cb_email)
-    const match = document.cookie.match(/cb_email=([^;]+)/);
-    if (match) {
-      setEmailState(decodeURIComponent(match[1]));
-    }
+    setEmailState(readCookie(EMAIL_COOKIE));
   }, []);
 
-  const setEmail = async (email: string): Promise<boolean> => {
-    const res = await fetch("/api/set-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-
-    if (res.ok) {
-      setEmailState(email);
+  const api = useMemo<DownloadEmailContextType>(() => ({
+    email,
+    // Immediately persist to cookie + state; no server call needed
+    setEmail: async (e: string) => {
+      writeCookie(EMAIL_COOKIE, e, ONE_YEAR);
+      setEmailState(e);
       return true;
-    }
-    return false;
-  };
-
-  const clearEmail = () => {
-    document.cookie = "cb_email=; path=/; max-age=0";
-    setEmailState(null);
-  };
+    },
+    clearEmail: () => {
+      clearCookie(EMAIL_COOKIE);
+      setEmailState(null);
+    },
+  }), [email]);
 
   return (
-    <DownloadEmailContext.Provider value={{ email, setEmail, clearEmail }}>
+    <DownloadEmailContext.Provider value={api}>
       {children}
     </DownloadEmailContext.Provider>
   );
