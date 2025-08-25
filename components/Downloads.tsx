@@ -31,42 +31,7 @@ function setEmailCookie(email: string) {
 }
 
 export default function Downloads() {
-  // Assumes the page is wrapped in <DownloadEmailProvider> higher up (App/layout)
   const { email, setEmail, clearEmail } = useDownloadEmail();
-
-  // Fixed top-right badge (like before)
-  const TopRightEmailBadge = () =>
-    email ? (
-      <div
-        style={{
-          position: "fixed",
-          top: 8,
-          right: 12,
-          fontSize: 12,
-          opacity: 0.85,
-          background: "rgba(248,250,252,0.95)", // near Tailwind slate-50
-          border: "1px solid rgba(203,213,225,0.9)", // slate-300
-          borderRadius: 9999,
-          padding: "4px 10px",
-          zIndex: 50,
-        }}
-        role="status"
-        aria-live="polite"
-      >
-        <span>downloads: {email}</span>
-        <button
-          type="button"
-          onClick={() => {
-            clearEmail();
-          }}
-          style={{ marginLeft: 8, fontSize: 12 }}
-          title="Clear download email"
-          aria-label="Clear download email"
-        >
-          ×
-        </button>
-      </div>
-    ) : null;
 
   async function ensureEmail(): Promise<string | null> {
     if (email && emailRegex.test(email)) return email;
@@ -75,9 +40,8 @@ export default function Downloads() {
       alert("Please enter a valid email address.");
       return null;
     }
-    // Update context and cookie so it persists across pages
-    setEmail(entered);
-    setEmailCookie(entered);
+    await setEmail(entered);       // context
+    setEmailCookie(entered);       // cookie (persists across reloads)
     return entered;
   }
 
@@ -88,7 +52,6 @@ export default function Downloads() {
     const href = `/downloads/${fileName}`;
     const fileUrl = new URL(href, location.origin).href;
 
-    // Notify backend (best-effort)
     try {
       await fetch("/api/notify_download", {
         method: "POST",
@@ -96,19 +59,35 @@ export default function Downloads() {
         body: JSON.stringify({ userEmail, fileName, fileUrl }),
       });
     } catch {
-      // ignore notify failures; still allow download
+      // best-effort only
     }
 
-    // Proceed with the actual download
     window.location.href = href;
   }
 
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
-      {/* Top-right email badge */}
-      <TopRightEmailBadge />
-
       <div className="container mx-auto px-6">
+        {/* INLINE BADGE — shown above the page title */}
+        {email && (
+          <div
+            className="mb-3 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800"
+            role="status"
+            aria-live="polite"
+          >
+            <span>downloads: {email}</span>
+            <button
+              type="button"
+              onClick={clearEmail}
+              className="ml-1 leading-none hover:opacity-70"
+              aria-label="Clear download email"
+              title="Clear download email"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Resources &amp; Downloads
