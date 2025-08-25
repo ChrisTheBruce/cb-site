@@ -18,7 +18,7 @@
   // Non-secret config used by your Worker
   "vars": {
     // Show the correct origin to your CORS helper
-    "CORS_ORIGIN": "https://chris.brighouse.com",
+    "CORS_ORIGIN": "https://chrisbrighouse.com",
     // Download notification email "from" details
     "SENDER_EMAIL": "no-reply@chrisbrighouse.com",
     "SENDER_NAME": "Downloads",
@@ -28,7 +28,7 @@
 
   // Map the Worker to the live hostname
   "routes": [
-    { "pattern": "chris.brighouse.com/*", "zone_name": "brighouse.com" }
+    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
     // If you ALSO serve the same app on www.chrisbrighouse.com, add this too:
     // { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
   ],
