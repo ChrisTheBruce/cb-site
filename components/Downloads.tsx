@@ -21,37 +21,6 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function EmailBadge({
-  email,
-  onCleared,
-  className = "",
-}: {
-  email: string | null;
-  onCleared: () => void;
-  className?: string;
-}) {
-  if (!email) return null;
-
-  return (
-    <div
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm bg-gray-100 text-gray-800 ${className}`}
-      role="status"
-      aria-live="polite"
-    >
-      <span className="font-medium">{email}</span>
-      <button
-        type="button"
-        onClick={onCleared}
-        className="ml-1 leading-none hover:opacity-70"
-        aria-label="Clear email"
-        title="Clear email"
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
 const EMAIL_COOKIE = "cb_dl_email";
 const ONE_YEAR = 60 * 60 * 24 * 365;
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -62,25 +31,53 @@ function setEmailCookie(email: string) {
 }
 
 export default function Downloads() {
-  const ctx = useDownloadEmail(); // expects { email, setEmail, clearEmail }
-  const email = (ctx as any)?.email ?? null;
-  const clearEmail = (ctx as any)?.clearEmail ?? (() => {});
-  const setEmail = (ctx as any)?.setEmail as undefined | ((e: string) => void);
+  // Assumes the page is wrapped in <DownloadEmailProvider> higher up (App/layout)
+  const { email, setEmail, clearEmail } = useDownloadEmail();
+
+  // Fixed top-right badge (like before)
+  const TopRightEmailBadge = () =>
+    email ? (
+      <div
+        style={{
+          position: "fixed",
+          top: 8,
+          right: 12,
+          fontSize: 12,
+          opacity: 0.85,
+          background: "rgba(248,250,252,0.95)", // near Tailwind slate-50
+          border: "1px solid rgba(203,213,225,0.9)", // slate-300
+          borderRadius: 9999,
+          padding: "4px 10px",
+          zIndex: 50,
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <span>downloads: {email}</span>
+        <button
+          type="button"
+          onClick={() => {
+            clearEmail();
+          }}
+          style={{ marginLeft: 8, fontSize: 12 }}
+          title="Clear download email"
+          aria-label="Clear download email"
+        >
+          ×
+        </button>
+      </div>
+    ) : null;
 
   async function ensureEmail(): Promise<string | null> {
-    let current = (ctx as any)?.email ?? null;
-    if (current && emailRegex.test(current)) return current;
-
+    if (email && emailRegex.test(email)) return email;
     const entered = (prompt("Enter your email to access downloads:") || "").trim();
     if (!emailRegex.test(entered)) {
       alert("Please enter a valid email address.");
       return null;
     }
-
-    // Prefer context if provided; fall back to cookie so the badge still works
-    if (typeof setEmail === "function") setEmail(entered);
-    else setEmailCookie(entered);
-
+    // Update context and cookie so it persists across pages
+    setEmail(entered);
+    setEmailCookie(entered);
     return entered;
   }
 
@@ -91,7 +88,7 @@ export default function Downloads() {
     const href = `/downloads/${fileName}`;
     const fileUrl = new URL(href, location.origin).href;
 
-    // Notify backend (best-effort, don’t block the download on failure)
+    // Notify backend (best-effort)
     try {
       await fetch("/api/notify_download", {
         method: "POST",
@@ -99,7 +96,7 @@ export default function Downloads() {
         body: JSON.stringify({ userEmail, fileName, fileUrl }),
       });
     } catch {
-      // ignore
+      // ignore notify failures; still allow download
     }
 
     // Proceed with the actual download
@@ -108,15 +105,14 @@ export default function Downloads() {
 
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
+      {/* Top-right email badge */}
+      <TopRightEmailBadge />
+
       <div className="container mx-auto px-6">
         <div className="text-center mb-12">
-          {/* Email shown ABOVE the title, with an '×' to clear */}
-          <EmailBadge email={email} onCleared={clearEmail} className="mb-3" />
-
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
             Resources &amp; Downloads
           </h2>
-
           <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">
             Click to download more information on my services
           </p>
