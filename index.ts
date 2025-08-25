@@ -1,175 +1,249 @@
-// index.ts — Cloudflare Worker (Modules syntax)
+// index.ts — Cloudflare Worker (swap in completely)
 
 export interface Env {
-  ASSETS: Fetcher;
-
-  // Vars from wrangler.jsonc (non-secrets)
-  CORS_ORIGIN?: string;              // e.g., "https://chrisbrighouse.com"
-  SENDER_EMAIL?: string;             // e.g., "no-reply@chrisbrighouse.com"
-  SENDER_NAME?: string;              // e.g., "Downloads"
-  SUPPORT_TO_EMAIL?: string;         // e.g., "support@chrisbrighouse.com"
-
-  // Secrets: set in CF dashboard (Workers → Settings → Variables → Add secret)
-  RESEND_API_KEY?: string;
-}
-
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const JSON_OK = (obj: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(obj), {
-    status: init.status ?? 200,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      ...init.headers,
-    },
-  });
-
-const JSON_ERR = (status: number, message: string) =>
-  JSON_OK({ error: message }, { status });
-
-function escapeHtml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function corsHeaders(req: Request, env: Env) {
-  // If CORS_ORIGIN is set, use it; else reflect the request Origin (safer than "*")
-  const origin = env.CORS_ORIGIN || req.headers.get("origin") || "*";
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
-    "vary": "origin",
-  };
-}
-
-function withCORS(req: Request, res: Response, env: Env) {
-  const h = new Headers(res.headers);
-  const extra = corsHeaders(req, env);
-  Object.entries(extra).forEach(([k, v]) => h.set(k, v));
-  return new Response(res.body, { status: res.status, headers: h });
-}
-
-// Accept JSON and forms; tolerate key variants
-async function readNotifyBody(req: Request) {
-  const ct = (req.headers.get("content-type") || "").toLowerCase();
-
-  if (ct.includes("application/json")) {
-    try {
-      return await req.json();
-    } catch {
-      // fall through
-    }
-  }
-
-  if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
-    const fd = await req.formData();
-    const obj: Record<string, any> = {};
-    for (const [k, v] of fd.entries()) obj[k] = typeof v === "string" ? v : String(v);
-    return obj;
-  }
-
-  // Last-chance: URL-encoded text body
-  try {
-    const text = await req.text();
-    if (text && text.includes("=")) {
-      const sp = new URLSearchParams(text);
-      const obj: Record<string, any> = {};
-      for (const [k, v] of sp.entries()) obj[k] = v;
-      return obj;
-    }
-  } catch {
-    // ignore
-  }
-
-  return {};
-}
-
-async function sendViaResend(env: Env, subject: string, text: string, html: string) {
-  const apiKey = env.RESEND_API_KEY;
-  const to = env.SUPPORT_TO_EMAIL || "support@chrisbrighouse.com";
-  const from = env.SENDER_EMAIL || "no-reply@chrisbrighouse.com";
-  const fromName = env.SENDER_NAME || "Downloads";
-
-  if (!apiKey) throw new Error("RESEND_API_KEY is not set");
-
-  const payload = {
-    from: `${fromName} <${from}>`,
-    to: [to],
-    subject,
-    text,
-    html,
-  };
-
-  const resp = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`Resend error ${resp.status}: ${body}`);
-  }
+  ASSETS: Fetcher; // bound via wrangler "assets"
+  AUTH_SECRET: string; // wrangler secret: wrangler secret put AUTH_SECRET
+  FROM_ADDRESS?: string; // optional, default used if missing
+  SUPPORT_EMAIL?: string; // optional, default used if missing
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
 
-    // CORS preflight
-    if (req.method === "OPTIONS") {
-      return withCORS(req, new Response(null, { status: 204 }), env);
+    if (url.pathname.startsWith("/api/")) {
+      return handleApi(request, env);
     }
 
-    // === Download notify endpoint ===
-    if (url.pathname === "/api/notify_download" && req.method === "POST") {
-      const body = await readNotifyBody(req);
-
-      const rawEmail = (body.userEmail ?? body.email ?? "").toString().trim();
-      const rawName  = (body.fileName  ?? body.filename ?? "").toString().trim();
-      const rawUrl   = (body.fileUrl   ?? body.url      ?? "").toString().trim();
-
-      if (!rawEmail || !emailRegex.test(rawEmail)) {
-        return withCORS(req, JSON_ERR(400, "Invalid email"), env);
-      }
-      if (!rawName) {
-        return withCORS(req, JSON_ERR(400, "fileName required"), env);
-      }
-
-      const when = new Date().toISOString();
-      const subject = `Download: ${rawName}`;
-      const text =
-`A file was downloaded.
-
-File: ${rawName}
-URL: ${rawUrl || "(not provided)"}
-User email: ${rawEmail}
-When: ${when}`;
-      const html =
-`<p>A file was downloaded.</p>
-<ul>
-  <li><b>File</b>: ${escapeHtml(rawName)}</li>
-  <li><b>URL</b>: ${rawUrl ? escapeHtml(rawUrl) : "(not provided)"}</li>
-  <li><b>User email</b>: ${escapeHtml(rawEmail)}</li>
-  <li><b>When</b>: ${when}</li>
-</ul>`;
-
-      try {
-        await sendViaResend(env, subject, text, html);
-        return withCORS(req, JSON_OK({ ok: true }), env);
-      } catch (err: any) {
-        // Don’t block downloads forever: return 200 but surface the error for logs if Resend misconfigured.
-        // If you prefer to fail hard, change status to 502.
-        console.error("notify_download email error:", err?.message || err);
-        return withCORS(req, JSON_OK({ ok: true, warn: "email_send_failed" }), env);
-      }
-    }
-
-    // Everything else: serve static assets (Vite build) or other routes you added elsewhere.
-    return env.ASSETS.fetch(req);
+    // Hand off to static assets / SPA handler
+    return env.ASSETS.fetch(request);
   },
 };
+
+async function handleApi(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // ---- Login
+  if (path === "/api/login") {
+    if (request.method !== "POST") return allowOnly(["POST"]);
+    return login(request, env);
+  }
+
+  // ---- Logout
+  if (path === "/api/logout") {
+    if (request.method !== "POST") return allowOnly(["POST"]);
+    return logout();
+  }
+
+  // ---- Who am I?
+  if (path === "/api/me") {
+    if (request.method !== "GET") return allowOnly(["GET"]);
+    return me(request, env);
+  }
+
+  // ---- Notify download
+  if (path === "/api/notify_download") {
+    if (request.method !== "POST") return allowOnly(["POST"]);
+    return notifyDownload(request, env);
+  }
+
+  return new Response("Not found", { status: 404 });
+}
+
+function allowOnly(methods: string[]) {
+  return new Response("Method Not Allowed", { status: 405, headers: { Allow: methods.join(", ") } });
+}
+
+// ---------------------- AUTH HELPERS ----------------------
+
+type SessionPayload = {
+  sub: string;   // username
+  iat: number;   // issued at (epoch secs)
+  exp: number;   // expiry (epoch secs)
+};
+
+function b64urlFromArrayBuffer(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const base64 = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return base64;
+}
+
+async function hmacSHA256(key: string, msg: string): Promise<string> {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(msg));
+  return b64urlFromArrayBuffer(sig);
+}
+
+async function signSession(payload: SessionPayload, secret: string): Promise<string> {
+  const body = JSON.stringify(payload);
+  const bodyB64 = btoa(body).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const sig = await hmacSHA256(secret, bodyB64);
+  return `${bodyB64}.${sig}`;
+}
+
+async function verifySession(token: string, secret: string): Promise<SessionPayload | null> {
+  const [bodyB64, sig] = token.split(".");
+  if (!bodyB64 || !sig) return null;
+  const expected = await hmacSHA256(secret, bodyB64);
+  if (expected !== sig) return null;
+  let json: SessionPayload;
+  try {
+    const jsonStr = atob(bodyB64.replace(/-/g, "+").replace(/_/g, "/"));
+    json = JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (json.exp <= now) return null;
+  return json;
+}
+
+function parseCookies(req: Request): Record<string, string> {
+  const header = req.headers.get("Cookie") || "";
+  const out: Record<string, string> = {};
+  header.split(";").forEach((part) => {
+    const [k, ...rest] = part.trim().split("=");
+    if (!k) return;
+    out[k] = decodeURIComponent(rest.join("="));
+  });
+  return out;
+}
+
+function setCookie(name: string, value: string, opts: { httpOnly?: boolean; maxAge?: number } = {}) {
+  let c = `${name}=${value}; Path=/; SameSite=Lax; Secure`;
+  if (opts.httpOnly) c += "; HttpOnly";
+  if (opts.maxAge) c += `; Max-Age=${opts.maxAge}`;
+  return c;
+}
+
+// ---------------------- ROUTES ----------------------
+
+async function login(request: Request, env: Env): Promise<Response> {
+  const ct = request.headers.get("content-type") || "";
+  let username = "";
+  let password = "";
+
+  if (ct.includes("application/json")) {
+    const b = await request.json().catch(() => ({}));
+    username = (b.username || "").toString();
+    password = (b.password || "").toString();
+  } else if (ct.includes("application/x-www-form-urlencoded")) {
+    const fd = await request.formData();
+    username = String(fd.get("username") || "");
+    password = String(fd.get("password") || "");
+  } else {
+    return new Response("Unsupported Media Type", { status: 415 });
+  }
+
+  // Only valid combo per your spec
+  if (!(username === "chris" && password === "badcommand")) {
+    return new Response(JSON.stringify({ ok: false, error: "Invalid credentials" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const payload: SessionPayload = { sub: "chris", iat: now, exp: now + 7 * 24 * 60 * 60 }; // 7 days
+  const token = await signSession(payload, env.AUTH_SECRET);
+
+  return new Response(JSON.stringify({ ok: true, user: "chris" }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "set-cookie": setCookie("session", token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 }),
+    },
+  });
+}
+
+async function logout(): Promise<Response> {
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "set-cookie": setCookie("session", "", { httpOnly: true, maxAge: 0 }),
+    },
+  });
+}
+
+async function me(request: Request, env: Env): Promise<Response> {
+  const cookies = parseCookies(request);
+  const token = cookies["session"];
+  if (!token) return new Response("Unauthorized", { status: 401 });
+
+  const payload = await verifySession(token, env.AUTH_SECRET);
+  if (!payload) return new Response("Unauthorized", { status: 401 });
+
+  return new Response(JSON.stringify({ user: payload.sub }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function validEmail(email: string): boolean {
+  // pragmatic, not perfect
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+async function notifyDownload(request: Request, env: Env): Promise<Response> {
+  const body = await request.json().catch(() => ({}));
+  const path = (body.path || "").toString();
+  const email = (body.email || "").toString();
+
+  if (!path) return new Response("Missing path", { status: 400 });
+  if (!validEmail(email)) return new Response("Invalid email", { status: 400 });
+
+  const toEmail = env.SUPPORT_EMAIL || "support@chrisbrighouse.com";
+  const fromEmail = env.FROM_ADDRESS || "Downloads <no-reply@brighouse.com>";
+
+  const payload = {
+    personalizations: [
+      {
+        to: [{ email: toEmail }],
+      },
+    ],
+    from: { email: fromEmail },
+    reply_to: { email },
+    subject: `Download: ${path}`,
+    content: [
+      {
+        type: "text/plain",
+        value:
+          `A file was downloaded.\n\n` +
+          `File: ${path}\n` +
+          `User email: ${email}\n` +
+          `Time (UTC): ${new Date().toISOString()}\n`,
+      },
+    ],
+  };
+
+  // Use MailChannels (works on CF Workers without extra libs)
+  const resp = await fetch("https://api.mailchannels.net/tx/v1/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (resp.ok) {
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const text = await resp.text().catch(() => "Mail send failed");
+  return new Response(JSON.stringify({ ok: false, error: text }), {
+    status: 502,
+    headers: { "content-type": "application/json" },
+  });
+}
