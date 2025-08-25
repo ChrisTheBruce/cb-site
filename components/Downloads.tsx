@@ -1,8 +1,6 @@
 // components/Downloads.tsx
 import React from "react";
-import { useDownloadEmail }from "../src/context/DownloadEmailContext"
-
-import DownloadButton from "../src/components/DownloadButton";
+import { useDownloadEmail } from "../src/context/DownloadEmailContext";
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -54,8 +52,59 @@ function EmailBadge({
   );
 }
 
+const EMAIL_COOKIE = "cb_dl_email";
+const ONE_YEAR = 60 * 60 * 24 * 365;
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function setEmailCookie(email: string) {
+  const secure = location.protocol === "https:" ? "Secure; " : "";
+  document.cookie = `${EMAIL_COOKIE}=${encodeURIComponent(email)}; Max-Age=${ONE_YEAR}; Path=/; ${secure}SameSite=Lax`;
+}
+
 export default function Downloads() {
-  const { email, clearEmail } = useDownloadEmail();
+  const ctx = useDownloadEmail(); // expects { email, setEmail, clearEmail }
+  const email = (ctx as any)?.email ?? null;
+  const clearEmail = (ctx as any)?.clearEmail ?? (() => {});
+  const setEmail = (ctx as any)?.setEmail as undefined | ((e: string) => void);
+
+  async function ensureEmail(): Promise<string | null> {
+    let current = (ctx as any)?.email ?? null;
+    if (current && emailRegex.test(current)) return current;
+
+    const entered = (prompt("Enter your email to access downloads:") || "").trim();
+    if (!emailRegex.test(entered)) {
+      alert("Please enter a valid email address.");
+      return null;
+    }
+
+    // Prefer context if provided; fall back to cookie so the badge still works
+    if (typeof setEmail === "function") setEmail(entered);
+    else setEmailCookie(entered);
+
+    return entered;
+  }
+
+  async function notifyAndDownload(fileName: string) {
+    const userEmail = await ensureEmail();
+    if (!userEmail) return;
+
+    const href = `/downloads/${fileName}`;
+    const fileUrl = new URL(href, location.origin).href;
+
+    // Notify backend (best-effort, don’t block the download on failure)
+    try {
+      await fetch("/api/notify_download", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userEmail, fileName, fileUrl }),
+      });
+    } catch {
+      // ignore
+    }
+
+    // Proceed with the actual download
+    window.location.href = href;
+  }
 
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
@@ -79,8 +128,23 @@ export default function Downloads() {
           </h3>
 
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
-            <DownloadButton filename="Chris-Brighouse-CV.pdf" />
-            <DownloadButton filename="Chris_Consulting_Services_SinglePage.pdf" />
+            <button
+              type="button"
+              onClick={() => notifyAndDownload("Chris-Brighouse-CV.pdf")}
+              className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              Chris-Brighouse-CV.pdf
+            </button>
+
+            <button
+              type="button"
+              onClick={() => notifyAndDownload("Chris_Consulting_Services_SinglePage.pdf")}
+              className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              Chris_Consulting_Services_SinglePage.pdf
+            </button>
           </div>
         </div>
       </div>
