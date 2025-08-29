@@ -1,39 +1,39 @@
+// wrangler.jsonc — hardened config matching the new index.ts
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cb-site",
   "main": "./index.ts",
   "compatibility_date": "2025-04-01",
 
+  // Enable *.workers.dev for quick testing
   "workers_dev": true,
+
+  // Observability + source maps
   "observability": { "enabled": true },
   "upload_source_maps": true,
 
-  // Serve Vite build output; SPA fallback lets client routing work.
+  // Serve the Vite build output as static assets with SPA fallback
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
 
-  // Non-secret config used by your Worker
+  // Plain vars (non-secrets). AUTH_SECRET should be set via `wrangler secret`.
   "vars": {
-    // Show the correct origin to your CORS helper
-    "CORS_ORIGIN": "https://chrisbrighouse.com",
-    // Download notification email "from" details
-    "SENDER_EMAIL": "no-reply@chrisbrighouse.com",
-    "SENDER_NAME": "Downloads",
-    // Where notifications go
-    "SUPPORT_TO_EMAIL": "support@chrisbrighouse.com"
+    "FROM_ADDRESS": "no-reply@brighouse.com",
+    "SUPPORT_EMAIL": "support@chrisbrighouse.com"
   },
 
-  // Map the Worker to the live hostname
+  // Route the Worker to both hostnames you mentioned.
+  // NOTE: The 'zone_name' must match the DNS zone in Cloudflare:
+  // - For apex chrisbrighouse.com, the zone is "chrisbrighouse.com".
+
   "routes": [
     { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
-    // If you ALSO serve the same app on www.chrisbrighouse.com, add this too:
-    // { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
   ],
 
-  // Let Cloudflare Git builds compile your Vite app before deploy
+  // Let Cloudflare build your Vite app from Git
   "build": {
     "command": "npm ci --progress=false && npm run build"
   }
