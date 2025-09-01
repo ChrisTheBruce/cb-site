@@ -1,27 +1,34 @@
-import type { Env } from "./env";
-import { json, bad } from "./lib/responses";
-import { handleEmailSet, handleEmailClear } from "./handlers/email";
-import { handleDownloadNotify } from "./handlers/notify";
-import { handleLogin, handleLogout, handleMe } from "./handlers/auth";
-import { handleHealth } from "./handlers/health";
+// worker/router.ts
+// Lightweight API router. Returns `Response | null` so the caller can
+// fall through to static asset serving when we don't handle a route.
 
-export async function handleApi(request: Request, env: Env, rid: string): Promise<Response> {
+import { setEmailHandler, clearEmailHandler } from "./handlers/email";
+
+export async function route(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
-  const p = url.pathname;
+  const { pathname } = url;
 
-  if (p === "/api/health") return handleHealth();
+  // EMAIL: set / clear download email cookie
+  if (request.method === "POST" && pathname === "/api/email") {
+    return setEmailHandler(request);
+  }
+  if (request.method === "POST" && pathname === "/api/email/clear") {
+    return clearEmailHandler(request);
+  }
 
-  // Email gate
-  if (p === "/api/email" || p === "/api/email/set") return handleEmailSet(request, env, rid);
-  if (p === "/api/email/clear") return handleEmailClear(request, env, rid);
+  // Add more API routes here (examples):
+  // if (request.method === "POST" && pathname === "/api/notify_download") {
+  //   return notifyDownloadHandler(request, env); // if you implement notify handler
+  // }
+  // if (request.method === "GET" && pathname === "/api/health") {
+  //   return new Response(JSON.stringify({ ok: true }), {
+  //     headers: { "content-type": "application/json; charset=utf-8" },
+  //   });
+  // }
 
-  // Download notify (both routes supported)
-  if (p === "/api/download/notify" || p === "/api/notify_download") return handleDownloadNotify(request, env, rid);
-
-  // Auth
-  if (p === "/api/login") return handleLogin(request, env, rid);
-  if (p === "/api/logout") return handleLogout(request, env, rid);
-  if (p === "/api/me") return handleMe(request, env, rid);
-
-  return bad(404, "Not found", rid);
+  // Not handled by API router; let caller serve static/app.
+  return null;
 }
+
+// For convenience, some codebases import a default:
+export default route;
