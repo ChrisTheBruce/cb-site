@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+  //  "dev": "wrangler dev",
     "build": "vite build",
-    "preview": "wrangler dev --remote",
+  //  "preview": "wrangler dev --remote",
     "deploy": "wrangler deploy",
     "lint": "eslint ."
   },
