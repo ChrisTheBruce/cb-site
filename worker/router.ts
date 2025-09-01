@@ -1,5 +1,6 @@
 // worker/router.ts
 import { chatStreamOpenAI } from "./handlers/chat";
+// If you have these handlers, keep the imports; otherwise remove the lines.
 import { setEmailHandler, clearEmailHandler } from "./handlers/email";
 import { loginHandler, logoutHandler, meHandler } from "./handlers/auth";
 
@@ -8,26 +9,32 @@ export interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
 }
 
-export async function route(request: Request, env: Env): Promise<Response | null> {
-  const { pathname } = new URL(request.url);
+// Primary API router used by worker/index.ts
+export async function handleApi(request: Request, env: Env): Promise<Response | null> {
+  const url = new URL(request.url);
+  const pathname = url.pathname;
   const method = request.method.toUpperCase();
 
-  // Chat: OpenAI only
+  // --- Chat: OpenAI streaming only ---
   if (method === "POST" && pathname === "/api/chat/stream") {
     const res = await chatStreamOpenAI(request, env);
-    const h = new Headers(res.headers);
-    h.set("X-Chat-Handler", "openai"); // prove it's the OpenAI path
-    return new Response(res.body, { status: res.status, headers: h });
+    const headers = new Headers(res.headers);
+    headers.set("X-Chat-Handler", "openai");
+    return new Response(res.body, { status: res.status, headers });
   }
 
-  // Email (downloads)
+  // --- Email (downloads) ---
   if (method === "POST" && pathname === "/api/email") return setEmailHandler(request);
   if (method === "POST" && pathname === "/api/email/clear") return clearEmailHandler(request);
 
-  // Auth
+  // --- Auth ---
   if (method === "POST" && pathname === "/api/login") return loginHandler(request);
   if (method === "POST" && pathname === "/api/logout") return logoutHandler(request);
   if (method === "GET" && pathname === "/api/me") return meHandler(request);
 
-  return null; // let static assets handle the rest
+  // Not an API route: let static assets handle it
+  return null;
 }
+
+// Back-compat alias (if any other file imports `route`)
+export const route = handleApi;
