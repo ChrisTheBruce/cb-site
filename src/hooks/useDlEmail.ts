@@ -1,5 +1,5 @@
 import * as React from "react";
-import { setEmail as apiSetEmail, clearEmail as apiClearEmail, readEmailCookie, notifyDownload } from "@/services/downloads";
+import { setEmail as apiSetEmail, clearEmail as apiClearEmail, readEmailCookie, notifyDownload } from "@/src/components/Downloads";
 
 export function useDlEmail() {
   const [email, setEmailState] = React.useState<string | null>(null);
