@@ -1,40 +1,15 @@
-// wrangler.jsonc — hardened config matching the new index.ts
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cb-site",
-  "main": "./index.ts",
-  "compatibility_date": "2025-04-01",
+  "main": "worker/index.ts",            // if your fetch() is exported from worker/index.ts, change to "worker/index.ts"
+  "compatibility_date": "2025-09-01",
+  "tsconfig": "tsconfig.json",
 
-  // Enable *.workers.dev for quick testing
-  "workers_dev": true,
-
-  // Observability + source maps
-  "observability": { "enabled": true },
-  "upload_source_maps": true,
-
-  // Serve the Vite build output as static assets with SPA fallback
+  // Serve built frontend from Vite's output
   "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "directory": "dist",
+    "binding": "ASSETS"
   },
 
-  // Plain vars (non-secrets). AUTH_SECRET should be set via `wrangler secret`.
-  "vars": {
-    "FROM_ADDRESS": "no-reply@chrisbrighouse.com",
-    "SUPPORT_EMAIL": "support@chrisbrighouse.com"
-  },
-
-  // Route the Worker to both hostnames you mentioned.
-  // NOTE: The 'zone_name' must match the DNS zone in Cloudflare:
-  // - For apex chrisbrighouse.com, the zone is "chrisbrighouse.com".
-
-  "routes": [
-    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
-  ],
-
-  // Let Cloudflare build your Vite app from Git
-  "build": {
-    "command": "npm ci --progress=false && npm run build"
-  }
+  // Optional but handy
+  "observability": { "enabled": true }
 }
