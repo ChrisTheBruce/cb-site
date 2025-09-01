@@ -1,6 +1,7 @@
 // components/Downloads.tsx
-import React from "react";
-import { useDownloadEmail } from "../src/context/DownloadEmailContext";
+import * as React from "react";
+import EmailBadge from "@/components/EmailBadge";
+import { useDlEmail } from "@/hooks/useDlEmail";
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -21,72 +22,47 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-const EMAIL_COOKIE = "cb_dl_email";
-const ONE_YEAR = 60 * 60 * 24 * 365;
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function setEmailCookie(email: string) {
-  const secure = location.protocol === "https:" ? "Secure; " : "";
-  document.cookie = `${EMAIL_COOKIE}=${encodeURIComponent(email)}; Max-Age=${ONE_YEAR}; Path=/; ${secure}SameSite=Lax`;
-}
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Downloads() {
-  const { email, setEmail, clearEmail } = useDownloadEmail();
+  const { email, submitEmail, notify } = useDlEmail();
 
   async function ensureEmail(): Promise<string | null> {
-    if (email && emailRegex.test(email)) return email;
+    if (email && EMAIL_REGEX.test(email)) return email;
     const entered = (prompt("Enter your email to access downloads:") || "").trim();
-    if (!emailRegex.test(entered)) {
+    if (!EMAIL_REGEX.test(entered)) {
       alert("Please enter a valid email address.");
       return null;
     }
-    await setEmail(entered);       // context
-    setEmailCookie(entered);       // cookie (persists across reloads)
+    const resp = await submitEmail(entered); // sets server cookie; EmailBadge will reflect it
+    if (!(resp as any).ok) {
+      alert((resp as any).error || "Email not accepted");
+      return null;
+    }
     return entered;
   }
 
-  async function notifyAndDownload(fileName: string) {
+  async function notifyAndDownload(fileName: string, title?: string) {
     const userEmail = await ensureEmail();
     if (!userEmail) return;
 
-    const href = `/downloads/${fileName}`;
-    const fileUrl = new URL(href, location.origin).href;
-
-    try {
-      await fetch("/api/notify_download", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userEmail, fileName, fileUrl }),
-      });
-    } catch {
-      // best-effort only
-    }
-
+    const href = `/assets/${fileName}`; // Use your actual path. If your files are under /downloads/, change to `/downloads/${fileName}`
+    // Trigger the real download first (as before)
     window.location.href = href;
+
+    // Best-effort notify (server reads email from cookie; body just needs a path/url)
+    const res = await notify(href, title ?? fileName);
+    if ((res as any).warn === "mail_notify_failed") {
+      // Optional: don’t block UX; just log a soft warning
+      console.warn("Support email notify failed (logged on server).");
+    }
   }
 
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
       <div className="container mx-auto px-6">
-        {/* INLINE BADGE — shown above the page title */}
-        {email && (
-          <div
-            className="mb-3 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800"
-            role="status"
-            aria-live="polite"
-          >
-            <span>downloads: {email}</span>
-            <button
-              type="button"
-              onClick={clearEmail}
-              className="ml-1 leading-none hover:opacity-70"
-              aria-label="Clear download email"
-              title="Clear download email"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        {/* Inline badge — shown above the page title */}
+        <EmailBadge className="mb-3 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800" />
 
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
@@ -105,7 +81,7 @@ export default function Downloads() {
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
             <button
               type="button"
-              onClick={() => notifyAndDownload("Chris-Brighouse-CV.pdf")}
+              onClick={() => notifyAndDownload("Chris-Brighouse-CV.pdf", "Chris-Brighouse-CV.pdf")}
               className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100"
             >
               <DownloadIcon className="h-4 w-4" />
@@ -114,7 +90,7 @@ export default function Downloads() {
 
             <button
               type="button"
-              onClick={() => notifyAndDownload("Chris_Consulting_Services_SinglePage.pdf")}
+              onClick={() => notifyAndDownload("Chris_Consulting_Services_SinglePage.pdf", "Chris Consulting Services — Single Page")}
               className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100"
             >
               <DownloadIcon className="h-4 w-4" />

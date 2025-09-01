@@ -1,44 +1,41 @@
 // Login.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+// Adjust this path if your file is in a different folder:
+// e.g. "./hooks/useAuth" or "../../hooks/useAuth"
+import { useAuth } from "../hooks/useAuth";
 
 export default function Login() {
   const nav = useNavigate();
+  const { user, loading, error: authErr, login } = useAuth();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // If already authenticated, go straight to chat (matches your current behaviour)
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/me", { credentials: "include" });
-        if (r.ok) nav("/chat");
-      } catch {}
-    })();
-  }, [nav]);
+    if (!loading && user) {
+      nav("/chat");
+    }
+  }, [loading, user, nav]);
 
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const r = await fetch("/api/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ username, password }),
-      });
-      if (!r.ok) {
-        const data = await r.json().catch(() => ({}));
-        setError(data?.error || `Sign in failed (${r.status})`);
+      const resp = await login(username, password);
+      if (!(resp && resp.ok)) {
+        setError((resp && resp.error) || "Sign in failed");
       } else {
-        // tell Navbar to refresh its state immediately
+        // notify anything listening (e.g. Navbar) that auth state changed
         window.dispatchEvent(new Event("auth:changed"));
         nav("/chat");
       }
-    } catch {
-      setError("Network error");
+    } catch (err) {
+      setError(err?.message || "Network error");
     } finally {
       setBusy(false);
     }
@@ -86,7 +83,11 @@ export default function Login() {
           placeholder="Enter password"
         />
 
-        {error && <div style={{ color: "#b00020", marginBottom: 8 }}>{error}</div>}
+        {(error || authErr) && (
+          <div style={{ color: "#b00020", marginBottom: 8 }}>
+            {error || authErr}
+          </div>
+        )}
 
         <button
           type="submit"
