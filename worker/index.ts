@@ -1,4 +1,4 @@
-import type { Env } from "./env";
+import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
 import { bad } from "./lib/responses";

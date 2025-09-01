@@ -10,6 +10,11 @@
     "binding": "ASSETS"
   },
 
+  // Force this service to own your domain
+  "routes": [
+    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
+  ],
+
   // Optional but handy
   "observability": { "enabled": true }
 }
