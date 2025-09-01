@@ -1,39 +1,33 @@
 // worker/router.ts
-import type { Env } from "./env"; // if you have an Env type; otherwise remove this import
-import { chatStreamOpenAI } from "./handlers/chat"; // <- OpenAI handler ONLY
+import { chatStreamOpenAI } from "./handlers/chat";
 import { setEmailHandler, clearEmailHandler } from "./handlers/email";
 import { loginHandler, logoutHandler, meHandler } from "./handlers/auth";
 
+export interface Env {
+  OPENAI_API?: string;
+  ASSETS: { fetch(req: Request): Promise<Response> };
+}
+
 export async function route(request: Request, env: Env): Promise<Response | null> {
-  const url = new URL(request.url);
-  const pathname = url.pathname;
+  const { pathname } = new URL(request.url);
   const method = request.method.toUpperCase();
 
-  // --- Chat: OpenAI streaming only ---
+  // Chat: OpenAI only
   if (method === "POST" && pathname === "/api/chat/stream") {
-    const res = await chatStreamOpenAI(request, env as any);
-    // Tag the response so we can prove this handler ran
-    const newHeaders = new Headers(res.headers);
-    newHeaders.set("X-Chat-Handler", "openai");
-    return new Response(res.body, { status: res.status, headers: newHeaders });
+    const res = await chatStreamOpenAI(request, env);
+    const h = new Headers(res.headers);
+    h.set("X-Chat-Handler", "openai"); // prove it's the OpenAI path
+    return new Response(res.body, { status: res.status, headers: h });
   }
 
-  // --- Email (downloads) ---
+  // Email (downloads)
   if (method === "POST" && pathname === "/api/email") return setEmailHandler(request);
   if (method === "POST" && pathname === "/api/email/clear") return clearEmailHandler(request);
 
-  // --- Auth ---
+  // Auth
   if (method === "POST" && pathname === "/api/login") return loginHandler(request);
   if (method === "POST" && pathname === "/api/logout") return logoutHandler(request);
   if (method === "GET" && pathname === "/api/me") return meHandler(request);
 
-  // Not handled -> let static assets layer handle it
-  return null;
+  return null; // let static assets handle the rest
 }
-
-// Back-compat if something else imports handleApi()
-export async function handleApi(request: Request, env: Env): Promise<Response | null> {
-  return route(request, env);
-}
-
-export default route;
