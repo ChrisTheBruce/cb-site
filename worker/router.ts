@@ -13,7 +13,8 @@ export async function route(request: Request): Promise<Response | null> {
   // ---- Chat (Stage 1: streaming echo, no OpenAI) ----
   // Keep this very early so it can't be shadowed by other /api/* matches.
   if (method === "POST" && pathname === "/api/chat/stream") {
-    return chatStreamEcho(request);
+    // return chatStreamEcho(request);
+    return chatStreamOpenAI(request, env)
   }
 
   // ---- Email (downloads) ----
