@@ -1,16 +1,14 @@
 // worker/router.ts
-// Lightweight API router. Returns `Response | null` so the caller can
-// fall through to static asset serving when we don't handle a route.
+// Returns `Response | null` so the caller can fall through to static file serving.
 
 import { setEmailHandler, clearEmailHandler } from "./handlers/email";
-// If/when you add notify, you'd import it here:
-// import { notifyDownloadHandler } from "./handlers/notify";
+import { loginHandler, logoutHandler, meHandler } from "./handlers/auth";
 
 export async function route(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   const { pathname } = url;
 
-  // EMAIL: set / clear download email cookie
+  // ---- Email (downloads) ----
   if (request.method === "POST" && pathname === "/api/email") {
     return setEmailHandler(request);
   }
@@ -18,18 +16,24 @@ export async function route(request: Request): Promise<Response | null> {
     return clearEmailHandler(request);
   }
 
-  // NOTIFY (uncomment when you add it)
-  // if (request.method === "POST" && pathname === "/api/notify_download") {
-  //   return notifyDownloadHandler(request, env);
-  // }
+  // ---- Auth ----
+  if (pathname === "/api/login" && request.method === "POST") {
+    return loginHandler(request);
+  }
+  if (pathname === "/api/logout" && request.method === "POST") {
+    return logoutHandler(request);
+  }
+  if (pathname === "/api/me" && request.method === "GET") {
+    return meHandler(request);
+  }
 
-  // Not handled by API router; let caller serve static/app.
+  // Add additional API routes here (e.g., notify_download) if needed.
+
+  // Not handled -> let outer layer serve static app assets.
   return null;
 }
 
-// --- Back-compat named export ---
-// Your worker/index.ts imports { handleApi } from "./router".
-// Provide it as an alias so we don't have to touch worker/index.ts.
+// Back-compat alias for your existing worker/index.ts import
 export async function handleApi(
   request: Request,
   _env?: unknown,
@@ -38,5 +42,4 @@ export async function handleApi(
   return route(request);
 }
 
-// Default export for convenience
 export default route;

@@ -1,84 +1,84 @@
-import type { Env } from "../env";
-import { json, bad } from "../lib/responses";
-import { isAllowedMethod, requireOrigin } from "../lib/security";
-import { parseCookies, serializeCookie } from "../lib/cookies";
+// worker/handlers/auth.ts
+// Simple demo auth: POST /api/login, GET /api/me, POST /api/logout
+// NOTE: This is intentionally minimal and not production-grade.
+// It uses a fixed credential and an opaque session cookie.
 
-const AUTH_COOKIE = "auth_session";
+const EMAIL_JSON = "application/json; charset=utf-8";
+const AUTH_COOKIE = "cb_auth";
+const VALID_USER = "chris";
+const VALID_PASS = "badcommand";
 
-async function hmacSHA256(key: string, data: string): Promise<string> {
-  const enc = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey("raw", enc.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(data));
-  let b64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-const b64 = (s: string) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-const unb64 = (s: string) => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return atob(s); };
-
-async function createSession(env: Env, username: string) {
-  const issued = Math.floor(Date.now() / 1000);
-  const payload = JSON.stringify({ u: username, iat: issued });
-  const payloadB64 = b64(payload);
-  const sig = await hmacSHA256(env.AUTH_SECRET, payloadB64);
-  return `${payloadB64}.${sig}`;
+// --- tiny helpers ---
+function json(data: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers);
+  if (!headers.has("content-type")) headers.set("content-type", EMAIL_JSON);
+  return new Response(JSON.stringify(data), { ...init, headers });
 }
 
-async function verifySession(env: Env, token: string): Promise<{ ok: boolean; user?: string }> {
-  const parts = token.split(".");
-  if (parts.length !== 2) return { ok: false };
-  const [payloadB64, sig] = parts;
-  const expected = await hmacSHA256(env.AUTH_SECRET, payloadB64);
-  if (sig !== expected) return { ok: false };
+function setCookie(name: string, value: string, maxAgeSeconds: number) {
+  return [
+    `${name}=${encodeURIComponent(value)}`,
+    "Path=/",
+    "SameSite=Lax",
+    "Secure",
+    "HttpOnly",
+    `Max-Age=${maxAgeSeconds}`,
+  ].join("; ");
+}
+
+function clearCookie(name: string) {
+  return [`${name}=`, "Path=/", "SameSite=Lax", "Secure", "HttpOnly", "Max-Age=0"].join("; ");
+}
+
+function readCookie(req: Request, name: string): string | null {
+  const raw = req.headers.get("cookie") || "";
+  const m = raw.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// --- handlers ---
+export async function loginHandler(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return json({ ok: false, error: "Method not allowed" }, { status: 405 });
+  }
+
+  let body: any = null;
   try {
-    const obj = JSON.parse(unb64(payloadB64));
-    if (!obj?.u) return { ok: false };
-    return { ok: true, user: obj.u };
+    body = await request.json();
   } catch {
-    return { ok: false };
+    return json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
-}
 
-export async function handleLogin(request: Request, env: Env, rid: string) {
-  if (!isAllowedMethod(request, ["POST"])) return bad(405, "Method not allowed", rid);
-  if (!requireOrigin(request)) return bad(403, "Forbidden (origin)", rid);
+  const username = (body?.username ?? "").toString().trim();
+  const password = (body?.password ?? "").toString();
 
-  const { username, password } = await request.json().catch(() => ({} as any));
-  if (username === "chris" && password === "badcommand") {
-    const token = await createSession(env, username);
-    const cookie = serializeCookie(AUTH_COOKIE, token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "Lax",
-      maxAge: 60 * 60 * 8,
-      path: "/",
-    });
-    return new Response(JSON.stringify({ ok: true, user: { name: "chris" } }), {
-      status: 200,
-      headers: { "content-type": "application/json", "set-cookie": cookie },
-    });
+  if (username !== VALID_USER || password !== VALID_PASS) {
+    return json({ ok: false, error: "Invalid credentials" }, { status: 401 });
   }
-  return bad(401, "Invalid credentials", rid);
+
+  // Minimal opaque "session". For real usage, mint a signed token.
+  const value = JSON.stringify({ u: username, t: Date.now() });
+  const cookie = setCookie(AUTH_COOKIE, value, 60 * 60 * 8); // 8 hours
+
+  return json({ ok: true, user: { username } }, { headers: { "Set-Cookie": cookie } });
 }
 
-export async function handleMe(request: Request, env: Env, rid: string) {
-  const cookies = parseCookies(request);
-  const token = cookies[AUTH_COOKIE];
-  if (!token) return bad(401, "Not authenticated", rid);
-  const { ok, user } = await verifySession(env, token);
-  if (!ok) return bad(401, "Invalid session", rid);
-  return json({ ok: true, user: { name: user } });
+export async function logoutHandler(_request: Request): Promise<Response> {
+  const cookie = clearCookie(AUTH_COOKIE);
+  return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
 }
 
-export async function handleLogout(_request: Request, _env: Env, _rid: string) {
-  const cookie = serializeCookie(AUTH_COOKIE, "", {
-    maxAge: 0,
-    httpOnly: true,
-    secure: true,
-    sameSite: "Lax",
-    path: "/",
-  });
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { "content-type": "application/json", "set-cookie": cookie },
-  });
+export async function meHandler(request: Request): Promise<Response> {
+  const sess = readCookie(request, AUTH_COOKIE);
+  if (!sess) return json({ ok: false, error: "Not authenticated" }, { status: 401 });
+
+  // Best effort parse
+  let user = "unknown";
+  try {
+    const obj = JSON.parse(sess);
+    if (obj?.u) user = String(obj.u);
+  } catch {
+    // fall through
+  }
+  return json({ ok: true, user: { username: user } });
 }

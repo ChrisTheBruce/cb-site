@@ -1,38 +1,53 @@
 // Login.jsx
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-// Adjust this path if your file is in a different folder:
-// e.g. "./hooks/useAuth" or "../../hooks/useAuth"
-import { useAuth } from "../hooks/useAuth";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function Login() {
   const nav = useNavigate();
-  const { user, loading, error: authErr, login } = useAuth();
-
+  const loc = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [alreadyAuthed, setAlreadyAuthed] = useState(false);
 
-  // If already authenticated, go straight to chat (matches your current behaviour)
+  // If already authenticated, redirect (to /chat by default)
   useEffect(() => {
-    if (!loading && user) {
-      nav("/chat");
-    }
-  }, [loading, user, nav]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/me", { credentials: "include" });
+        if (!cancelled && res.ok) {
+          setAlreadyAuthed(true);
+          const to = new URLSearchParams(loc.search).get("to") || "/chat";
+          nav(to, { replace: true });
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [nav, loc.search]);
 
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const resp = await login(username, password);
-      if (!(resp && resp.ok)) {
-        setError((resp && resp.error) || "Sign in failed");
-      } else {
-        // notify anything listening (e.g. Navbar) that auth state changed
+      const res = await fetch("/api/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        // (optional) notify others (e.g., Navbar) that auth changed
         window.dispatchEvent(new Event("auth:changed"));
-        nav("/chat");
+        const to = new URLSearchParams(loc.search).get("to") || "/chat";
+        nav(to, { replace: true });
+      } else {
+        setError(data?.error || `Sign in failed (${res.status})`);
       }
     } catch (err) {
       setError(err?.message || "Network error");
@@ -60,6 +75,12 @@ export default function Login() {
     <div style={{ maxWidth: 360, margin: "60px auto", padding: 24, border: "1px solid #eee", borderRadius: 12 }}>
       <h1 style={{ margin: 0, marginBottom: 16, fontSize: 20 }}>Sign in</h1>
 
+      {alreadyAuthed && (
+        <div style={{ marginBottom: 12, color: "#065f46" }}>
+          You’re already signed in — redirecting…
+        </div>
+      )}
+
       <form onSubmit={onSubmit} noValidate>
         <label style={labelStyle} htmlFor="username">Username</label>
         <input
@@ -69,7 +90,7 @@ export default function Login() {
           style={inputStyle}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Enter username"
+          placeholder="Enter username (hint: chris)"
         />
 
         <label style={labelStyle} htmlFor="password">Password</label>
@@ -80,12 +101,12 @@ export default function Login() {
           style={inputStyle}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter password"
+          placeholder="Enter password (hint: badcommand)"
         />
 
-        {(error || authErr) && (
+        {error && (
           <div style={{ color: "#b00020", marginBottom: 8 }}>
-            {error || authErr}
+            {error}
           </div>
         )}
 
