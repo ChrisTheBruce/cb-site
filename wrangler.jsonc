@@ -21,7 +21,7 @@
 
   // Plain vars (non-secrets). AUTH_SECRET should be set via `wrangler secret`.
   "vars": {
-    "FROM_ADDRESS": "no-reply@brighouse.com",
+    "FROM_ADDRESS": "no-reply@chrisbrighouse.com",
     "SUPPORT_EMAIL": "support@chrisbrighouse.com"
   },
 
