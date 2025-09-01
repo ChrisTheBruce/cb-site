@@ -3,31 +3,37 @@
 
 import { setEmailHandler, clearEmailHandler } from "./handlers/email";
 import { loginHandler, logoutHandler, meHandler } from "./handlers/auth";
+import { chatStreamEcho } from "./handlers/chat"; // NEW: Stage 1 streaming echo
 
 export async function route(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   const { pathname } = url;
+  const method = request.method.toUpperCase();
+
+  // ---- Chat (Stage 1: streaming echo, no OpenAI) ----
+  // Keep this very early so it can't be shadowed by other /api/* matches.
+  if (method === "POST" && pathname === "/api/chat/stream") {
+    return chatStreamEcho(request);
+  }
 
   // ---- Email (downloads) ----
-  if (request.method === "POST" && pathname === "/api/email") {
+  if (method === "POST" && pathname === "/api/email") {
     return setEmailHandler(request);
   }
-  if (request.method === "POST" && pathname === "/api/email/clear") {
+  if (method === "POST" && pathname === "/api/email/clear") {
     return clearEmailHandler(request);
   }
 
-  // ---- Auth ----
-  if (pathname === "/api/login" && request.method === "POST") {
+  // ---- Auth (login/logout/me) ----
+  if (method === "POST" && pathname === "/api/login") {
     return loginHandler(request);
   }
-  if (pathname === "/api/logout" && request.method === "POST") {
+  if (method === "POST" && pathname === "/api/logout") {
     return logoutHandler(request);
   }
-  if (pathname === "/api/me" && request.method === "GET") {
+  if (method === "GET" && pathname === "/api/me") {
     return meHandler(request);
   }
-
-  // Add additional API routes here (e.g., notify_download) if needed.
 
   // Not handled -> let outer layer serve static app assets.
   return null;
