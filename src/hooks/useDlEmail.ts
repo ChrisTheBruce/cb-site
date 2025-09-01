@@ -4,7 +4,7 @@ import {
   clearEmail as apiClearEmail,
   readEmailCookie,
   notifyDownload,
-} from "@/services/Downloads";
+} from "@/components/Downloads";
 
 export function useDlEmail() {
   const [email, setEmailState] = React.useState<string | null>(null);
