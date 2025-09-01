@@ -90,7 +90,7 @@ export default function Login() {
           style={inputStyle}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Enter username (hint: chris)"
+          placeholder="Enter username"
         />
 
         <label style={labelStyle} htmlFor="password">Password</label>
@@ -101,7 +101,7 @@ export default function Login() {
           style={inputStyle}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter password (hint: badcommand)"
+          placeholder="Enter password"
         />
 
         {error && (
