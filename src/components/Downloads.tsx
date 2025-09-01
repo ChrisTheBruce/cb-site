@@ -1,4 +1,3 @@
-// src/components/Downloads.tsx (full replacement)
 import * as React from "react";
 import EmailBadge from "@/components/EmailBadge";
 import { useDlEmail } from "@/hooks/useDlEmail";
@@ -16,7 +15,7 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Downloads() {
-  const { email, submitEmail, notify } = useDlEmail();
+  const { email, submitEmail, clear, busy, error, notify } = useDlEmail();
 
   async function ensureEmail(): Promise<string | null> {
     if (email && EMAIL_REGEX.test(email)) return email;
@@ -37,19 +36,21 @@ export default function Downloads() {
     const ok = await ensureEmail();
     if (!ok) return;
 
-    // Kick off the real download
+    // trigger the download
     window.location.href = path;
 
-    // Best-effort notify; do not block the UX
+    // best-effort notify (non-blocking)
     try {
       const r = await notify(path, title);
       if ((r as any).warn === "mail_notify_failed") {
         console.warn("Support email notify failed server-side.");
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
-  // Adjust these paths to match where your PDFs are served from
+  // Adjust these to match your real asset paths
   const items = [
     { title: "Chris-Brighouse-CV.pdf", path: "/assets/Chris-Brighouse-CV.pdf" },
     { title: "Chris_Consulting_Services_SinglePage.pdf", path: "/assets/Chris_Consulting_Services_SinglePage.pdf" },
@@ -58,7 +59,16 @@ export default function Downloads() {
   return (
     <section id="downloads" className="py-20 scroll-mt-20 bg-white">
       <div className="container mx-auto px-6">
-        <EmailBadge className="mb-3 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800" />
+        {/* Centered badge above the title */}
+        <div className="mb-3 text-center">
+          <EmailBadge
+            email={email}
+            onClear={clear}
+            busy={busy}
+            error={error}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800"
+          />
+        </div>
 
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Resources &amp; Downloads</h2>
@@ -67,7 +77,6 @@ export default function Downloads() {
 
         <div className="max-w-2xl mx-auto bg-gray-50 p-8 rounded-lg border border-gray-200">
           <h3 className="font-semibold text-lg text-gray-800 mb-4">Click on an item to download it:</h3>
-
           <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
             {items.map(it => (
               <button
