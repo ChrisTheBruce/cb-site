@@ -1,52 +1,39 @@
 // worker/router.ts
-// Returns `Response | null` so the caller can fall through to static file serving.
-
+import type { Env } from "./env"; // if you have an Env type; otherwise remove this import
+import { chatStreamOpenAI } from "./handlers/chat"; // <- OpenAI handler ONLY
 import { setEmailHandler, clearEmailHandler } from "./handlers/email";
 import { loginHandler, logoutHandler, meHandler } from "./handlers/auth";
-import { chatStreamEcho } from "./handlers/chat"; // NEW: Stage 1 streaming echo
 
-export async function route(request: Request): Promise<Response | null> {
+export async function route(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
-  const { pathname } = url;
+  const pathname = url.pathname;
   const method = request.method.toUpperCase();
 
-  // ---- Chat (Stage 1: streaming echo, no OpenAI) ----
-  // Keep this very early so it can't be shadowed by other /api/* matches.
+  // --- Chat: OpenAI streaming only ---
   if (method === "POST" && pathname === "/api/chat/stream") {
-    // return chatStreamEcho(request);
-    return chatStreamOpenAI(request, env)
+    const res = await chatStreamOpenAI(request, env as any);
+    // Tag the response so we can prove this handler ran
+    const newHeaders = new Headers(res.headers);
+    newHeaders.set("X-Chat-Handler", "openai");
+    return new Response(res.body, { status: res.status, headers: newHeaders });
   }
 
-  // ---- Email (downloads) ----
-  if (method === "POST" && pathname === "/api/email") {
-    return setEmailHandler(request);
-  }
-  if (method === "POST" && pathname === "/api/email/clear") {
-    return clearEmailHandler(request);
-  }
+  // --- Email (downloads) ---
+  if (method === "POST" && pathname === "/api/email") return setEmailHandler(request);
+  if (method === "POST" && pathname === "/api/email/clear") return clearEmailHandler(request);
 
-  // ---- Auth (login/logout/me) ----
-  if (method === "POST" && pathname === "/api/login") {
-    return loginHandler(request);
-  }
-  if (method === "POST" && pathname === "/api/logout") {
-    return logoutHandler(request);
-  }
-  if (method === "GET" && pathname === "/api/me") {
-    return meHandler(request);
-  }
+  // --- Auth ---
+  if (method === "POST" && pathname === "/api/login") return loginHandler(request);
+  if (method === "POST" && pathname === "/api/logout") return logoutHandler(request);
+  if (method === "GET" && pathname === "/api/me") return meHandler(request);
 
-  // Not handled -> let outer layer serve static app assets.
+  // Not handled -> let static assets layer handle it
   return null;
 }
 
-// Back-compat alias for your existing worker/index.ts import
-export async function handleApi(
-  request: Request,
-  _env?: unknown,
-  _ctx?: ExecutionContext
-): Promise<Response | null> {
-  return route(request);
+// Back-compat if something else imports handleApi()
+export async function handleApi(request: Request, env: Env): Promise<Response | null> {
+  return route(request, env);
 }
 
 export default route;
