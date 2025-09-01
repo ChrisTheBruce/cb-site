@@ -1,3 +1,4 @@
+// src/components/EmailBadge.tsx (full replacement)
 import * as React from "react";
 import { useDlEmail } from "@/hooks/useDlEmail";
 
