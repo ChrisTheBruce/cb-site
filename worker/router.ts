@@ -1,5 +1,10 @@
 // worker/router.ts
 import { chatStreamOpenAI } from "./handlers/chat";
+// worker/router.ts
+import { chat } from './handlers/chat';
+
+// ...existing routes
+router.post('/api/chat', (req, env) => chat(req, env));
 
 export interface Env {
   OPENAI_API?: string;

@@ -1,44 +1,22 @@
 // src/services/chat.ts
-// Minimal streaming client for the Worker endpoint.
+export type ChatMessage = { role: 'system'|'user'|'assistant'; content: string };
 
-export interface ChatRequestPayload {
-  model?: string;        // server defaults to gpt-4o-mini in Stage 3
-  system?: string;
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  temperature?: number;
-  tools?: unknown[];     // reserved for future MCP/tool use
-}
-
-/**
- * Stream plain-text chunks from the Worker. Returns an async generator.
- */
-export async function* streamText(
-  endpoint: string,
-  payload: ChatRequestPayload,
-  signal?: AbortSignal
-): AsyncGenerator<string, void, unknown> {
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
+export async function* streamChat(
+  messages: ChatMessage[],
+  opts: { model?: string } = {}
+) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, ...opts })
   });
-
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Chat stream error: ${res.status} ${res.statusText} ${text}`);
-  }
+  if (!res.ok || !res.body) throw new Error(`Chat failed: ${res.status}`);
 
   const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      yield decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
+  const dec = new TextDecoder();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    yield dec.decode(value, { stream: true });
   }
 }
