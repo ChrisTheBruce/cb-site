@@ -1,5 +1,13 @@
-// src/hooks/useAuth.ts
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+// src/hooks/useAuth.tsx
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import * as Auth from "../services/auth";
 
 type AuthCtx = {
@@ -7,13 +15,13 @@ type AuthCtx = {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  signIn: (u: string, p: string) => Promise<Auth.User>;
+  signIn: (u: string, p: string) => Promise<Readonly<Auth.User>>;
   signOut: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Auth.User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const u = await Auth.me();
       setUser(u);
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(String(e?.message ?? e));
       setUser(null);
     } finally {
       setLoading(false);
@@ -33,17 +41,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // On first mount, check session. Don't redirect here—just set state.
     refresh();
   }, [refresh]);
 
-  const signIn = useCallback(async (username: string, password: string) => {
-    setError(null);
-    const u = await Auth.login(username, password);
-    // Ensure cookie is committed server-side, then confirm with /api/me
-    await refresh();
-    return u;
-  }, [refresh]);
+  const signIn = useCallback(
+    async (username: string, password: string) => {
+      setError(null);
+      const u = await Auth.login(username, password);
+      await refresh();
+      return u;
+    },
+    [refresh]
+  );
 
   const signOut = useCallback(async () => {
     setError(null);
@@ -51,9 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo<AuthCtx>(() => ({
-    user, loading, error, refresh, signIn, signOut
-  }), [user, loading, error, refresh, signIn, signOut]);
+  const value = useMemo<AuthCtx>(
+    () => ({ user, loading, error, refresh, signIn, signOut }),
+    [user, loading, error, refresh, signIn, signOut]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
