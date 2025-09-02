@@ -1,6 +1,15 @@
 import { useState, useRef } from 'react';
 import { streamChat } from '../services/chat';
 
+// at top of Chat.jsx
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+
+const { user, loading } = useAuth();
+if (loading) return null;                // or a spinner
+if (!user) return <Navigate to="/login" replace />;
+
+
 export default function Chat() {
   const [messages, setMessages] = useState([
     { role: 'system', content: 'You are a helpful assistant.' }
