@@ -84,19 +84,19 @@ const routes: Route[] = [
   // Auth
   {
     method: "POST",
-    path: "/api/auth/login",
+    path: "/api/login",
     handler: (req, env, ctx) =>
       callModule("./handlers/auth", ["login", "handleLogin", "handle", "post"], req, env, ctx),
   },
   {
     method: "POST",
-    path: "/api/auth/logout",
+    path: "/api/logout",
     handler: (req, env, ctx) =>
       callModule("./handlers/auth", ["logout", "handleLogout", "handle", "post"], req, env, ctx),
   },
   {
     method: "GET",
-    path: "/api/auth/me",
+    path: "/api/me",
     handler: (req, env, ctx) =>
       callModule("./handlers/auth", ["me", "profile", "handleMe", "handle", "get"], req, env, ctx),
   },
