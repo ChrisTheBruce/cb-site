@@ -1,4 +1,5 @@
 // worker/router.ts
+// Router for all /api/* endpoints. Exports `handleApi` (as expected by worker/index.ts).
 
 import { chat } from "./handlers/chat";
 
@@ -11,7 +12,7 @@ type Handler = (req: Request, env: Env, ctx: ExecutionContext) => Promise<Respon
 
 type Route = {
   method: string;
-  path: string; // exact match for simplicity
+  path: string; // exact match
   handler: Handler;
 };
 
@@ -28,18 +29,11 @@ function json(status: number, data: unknown) {
   });
 }
 
-function okText(text = "") {
-  return new Response(text, {
-    status: 200,
-    headers: { ...CORS, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
-  });
-}
-
 function isApi(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
-// --- Dynamic module invoker so we don't depend on exact export names ---
+// Dynamically import a handler module and invoke the first matching export name
 async function callModule(
   modPath: string,
   candidates: string[],
@@ -54,19 +48,18 @@ async function callModule(
       return (fn as Handler)(req, env, ctx);
     }
   }
-  // try default export last
   if (typeof mod.default === "function") {
     return (mod.default as Handler)(req, env, ctx);
   }
   return json(501, { error: `No callable export found in ${modPath}` });
 }
 
-// Build the route table
+// Route table — add more here as needed
 const routes: Route[] = [
-  // New streaming chat endpoint (OpenAI via Cloudflare AI Gateway)
+  // New streaming chat endpoint via Cloudflare AI Gateway → OpenAI
   { method: "POST", path: "/api/chat", handler: chat as Handler },
 
-  // Health check (GET)
+  // Health
   {
     method: "GET",
     path: "/api/health",
@@ -74,7 +67,7 @@ const routes: Route[] = [
       callModule("./handlers/health", ["health", "handleHealth", "handle", "get"], req, env, ctx),
   },
 
-  // Email/notify endpoints (POST)
+  // Notifications & email
   {
     method: "POST",
     path: "/api/notify",
@@ -88,7 +81,7 @@ const routes: Route[] = [
       callModule("./handlers/email", ["email", "send", "handleEmail", "handle", "post"], req, env, ctx),
   },
 
-  // Auth endpoints (POST/GET)
+  // Auth
   {
     method: "POST",
     path: "/api/auth/login",
@@ -109,40 +102,43 @@ const routes: Route[] = [
   },
 ];
 
-// Match by exact method+path (keeps things predictable)
 function findRoute(method: string, pathname: string): Route | undefined {
   return routes.find((r) => r.method === method && r.path === pathname);
 }
 
-// Default export: fetch-style handler used by worker/index.ts
-export default {
-  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(req.url);
+/**
+ * Named export expected by worker/index.ts
+ * Handles ONLY /api/* requests. Non-API paths should be handled elsewhere (assets, SPA).
+ */
+export async function handleApi(
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(req.url);
 
-    // Preflight for any /api/* path
-    if (req.method === "OPTIONS" && isApi(url.pathname)) {
-      return new Response(null, { status: 204, headers: CORS });
-    }
+  if (!isApi(url.pathname)) {
+    // Not for us — let the caller handle (usually worker/index.ts serving assets)
+    return new Response("Not an API route", { status: 404 });
+  }
 
-    // Only handle /api/* here; let your worker/index.ts serve assets, etc.
-    if (isApi(url.pathname)) {
-      const route = findRoute(req.method, url.pathname);
-      if (!route) return json(404, { error: "Not found" });
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
 
-      try {
-        const res = await route.handler(req, env, ctx);
-        // Add CORS headers if missing for API responses
-        const withCors = new Headers(res.headers);
-        Object.entries(CORS).forEach(([k, v]) => {
-          if (!withCors.has(k)) withCors.set(k, v);
-        });
-        return new Response(res.body, { status: res.status, headers: withCors });
-      } catch (err) {
-        return json(500, { error: "Unhandled exception", detail: String(err) });
-      }
-    }
+  const route = findRoute(req.method, url.pathname);
+  if (!route) return json(404, { error: "Not found" });
 
-    // Not an API route; your worker/index.ts should handle this (assets, SPA fallback)
-    return new Response(null, { status: 404 });
-  },
-};
+  try {
+    const res = await route.handler(req, env, ctx);
+    // Ensure CORS on API responses
+    const withCors = new Headers(res.headers);
+    Object.entries(CORS).forEach(([k, v]) => {
+      if (!withCors.has(k)) withCors.set(k, v);
+    });
+    return new Response(res.body, { status: res.status, headers: withCors });
+  } catch (err) {
+    return json(500, { error: "Unhandled exception", detail: String(err) });
+  }
+}
