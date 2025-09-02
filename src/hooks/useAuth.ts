@@ -1,43 +1,65 @@
-import * as React from "react";
-import { login as apiLogin, logout as apiLogout, me } from "@/services/auth";
-import type { User } from "@/types";
+// src/hooks/useAuth.ts
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import * as Auth from "../services/auth";
 
-type State = {
-  user: User | null;
+type AuthCtx = {
+  user: Auth.User | null;
   loading: boolean;
   error: string | null;
+  refresh: () => Promise<void>;
+  signIn: (u: string, p: string) => Promise<Auth.User>;
+  signOut: () => Promise<void>;
 };
 
-export function useAuth() {
-  const [state, set] = React.useState<State>({ user: null, loading: true, error: null });
+const Ctx = createContext<AuthCtx | null>(null);
 
-  const refresh = React.useCallback(async () => {
-    set(s => ({ ...s, loading: true, error: null }));
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<Auth.User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const resp = await me();
-      if ((resp as any).ok) set({ user: (resp as any).user, loading: false, error: null });
-      else set({ user: null, loading: false, error: (resp as any).error || "Not authenticated" });
+      const u = await Auth.me();
+      setUser(u);
     } catch (e: any) {
-      set({ user: null, loading: false, error: e.message || "Not authenticated" });
+      setError(String(e?.message || e));
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  React.useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    // On first mount, check session. Don't redirect here—just set state.
+    refresh();
+  }, [refresh]);
 
-  const login = React.useCallback(async (username: string, password: string) => {
-    set(s => ({ ...s, loading: true, error: null }));
-    const resp = await apiLogin(username, password);
-    if ((resp as any).ok) set({ user: (resp as any).user, loading: false, error: null });
-    else set({ user: null, loading: false, error: (resp as any).error || "Login failed" });
-    return resp;
+  const signIn = useCallback(async (username: string, password: string) => {
+    setError(null);
+    const u = await Auth.login(username, password);
+    // Ensure cookie is committed server-side, then confirm with /api/me
+    await refresh();
+    return u;
+  }, [refresh]);
+
+  const signOut = useCallback(async () => {
+    setError(null);
+    await Auth.logout();
+    setUser(null);
   }, []);
 
-  const logout = React.useCallback(async () => {
-    set(s => ({ ...s, loading: true, error: null }));
-    const resp = await apiLogout();
-    set({ user: null, loading: false, error: (resp as any).ok ? null : (resp as any).error || null });
-    return resp;
-  }, []);
+  const value = useMemo<AuthCtx>(() => ({
+    user, loading, error, refresh, signIn, signOut
+  }), [user, loading, error, refresh, signIn, signOut]);
 
-  return { ...state, login, logout, refresh };
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useAuth(): AuthCtx {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  return ctx;
 }
