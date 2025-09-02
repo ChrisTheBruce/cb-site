@@ -1,84 +1,103 @@
 // worker/handlers/auth.ts
-// Simple demo auth: POST /api/login, GET /api/me, POST /api/logout
-// NOTE: This is intentionally minimal and not production-grade.
-// It uses a fixed credential and an opaque session cookie.
+// Minimal username/password auth for the SPA.
+// Exports: login (POST), logout (POST), me (GET)
 
-const EMAIL_JSON = "application/json; charset=utf-8";
-const AUTH_COOKIE = "cb_auth";
-const VALID_USER = "chris";
-const VALID_PASS = "badcommand";
+type Env = {
+  // Optional overrides via wrangler vars/secrets if you want later
+  AUTH_USER?: string;
+  AUTH_PASS?: string;
+};
 
-// --- tiny helpers ---
-function json(data: unknown, init: ResponseInit = {}) {
-  const headers = new Headers(init.headers);
-  if (!headers.has("content-type")) headers.set("content-type", EMAIL_JSON);
-  return new Response(JSON.stringify(data), { ...init, headers });
+const DEFAULT_USER = "chris";
+const DEFAULT_PASS = "badcommand";
+
+const COOKIE_NAME = "cb_auth";      // session cookie name
+const COOKIE_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
+
+function parseCookies(req: Request): Record<string, string> {
+  const header = req.headers.get("cookie") || "";
+  const out: Record<string, string> = {};
+  header.split(";").forEach((pair) => {
+    const idx = pair.indexOf("=");
+    if (idx === -1) return;
+    const k = pair.slice(0, idx).trim();
+    const v = pair.slice(idx + 1).trim();
+    if (k) out[k] = decodeURIComponent(v);
+  });
+  return out;
 }
 
-function setCookie(name: string, value: string, maxAgeSeconds: number) {
-  return [
-    `${name}=${encodeURIComponent(value)}`,
+function makeCookie(value: string, maxAge?: number) {
+  const parts = [
+    `${COOKIE_NAME}=${encodeURIComponent(value)}`,
     "Path=/",
-    "SameSite=Lax",
-    "Secure",
     "HttpOnly",
-    `Max-Age=${maxAgeSeconds}`,
-  ].join("; ");
+    "SameSite=Lax",
+    "Secure", // you’re on HTTPS on Cloudflare
+  ];
+  if (typeof maxAge === "number") parts.push(`Max-Age=${maxAge}`);
+  return parts.join("; ");
 }
 
-function clearCookie(name: string) {
-  return [`${name}=`, "Path=/", "SameSite=Lax", "Secure", "HttpOnly", "Max-Age=0"].join("; ");
+function json(status: number, data: unknown, extraHeaders?: HeadersInit) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...(extraHeaders || {}),
+    },
+  });
 }
 
-function readCookie(req: Request, name: string): string | null {
-  const raw = req.headers.get("cookie") || "";
-  const m = raw.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
-// --- handlers ---
-export async function loginHandler(request: Request): Promise<Response> {
-  if (request.method !== "POST") {
-    return json({ ok: false, error: "Method not allowed" }, { status: 405 });
+export async function login(req: Request, env: Env): Promise<Response> {
+  if (req.method !== "POST") {
+    return json(405, { error: "Method not allowed" });
   }
 
   let body: any = null;
   try {
-    body = await request.json();
+    body = await req.json();
   } catch {
-    return json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return json(400, { error: "Invalid JSON body" });
   }
 
-  const username = (body?.username ?? "").toString().trim();
-  const password = (body?.password ?? "").toString();
+  const username = String(body?.username || "");
+  const password = String(body?.password || "");
 
-  if (username !== VALID_USER || password !== VALID_PASS) {
-    return json({ ok: false, error: "Invalid credentials" }, { status: 401 });
+  const expectedUser = env.AUTH_USER || DEFAULT_USER;
+  const expectedPass = env.AUTH_PASS || DEFAULT_PASS;
+
+  if (username !== expectedUser || password !== expectedPass) {
+    // Clear any stray cookie on bad login (defensive)
+    return json(401, { ok: false, error: "Invalid credentials" }, {
+      "Set-Cookie": makeCookie("", 0),
+    });
   }
 
-  // Minimal opaque "session". For real usage, mint a signed token.
-  const value = JSON.stringify({ u: username, t: Date.now() });
-  const cookie = setCookie(AUTH_COOKIE, value, 60 * 60 * 8); // 8 hours
+  // Minimal session; value can be anything truthy. No PII in the cookie.
+  const headers = new Headers();
+  headers.set("Set-Cookie", makeCookie("1", COOKIE_TTL_SECONDS));
 
-  return json({ ok: true, user: { username } }, { headers: { "Set-Cookie": cookie } });
+  // Return a simple shape most UIs can consume
+  return json(200, { ok: true, user: { username } }, headers);
 }
 
-export async function logoutHandler(_request: Request): Promise<Response> {
-  const cookie = clearCookie(AUTH_COOKIE);
-  return json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+export async function logout(_req: Request, _env: Env): Promise<Response> {
+  // Expire the cookie
+  return json(200, { ok: true }, { "Set-Cookie": makeCookie("", 0) });
 }
 
-export async function meHandler(request: Request): Promise<Response> {
-  const sess = readCookie(request, AUTH_COOKIE);
-  if (!sess) return json({ ok: false, error: "Not authenticated" }, { status: 401 });
+export async function me(req: Request, env: Env): Promise<Response> {
+  // Check cookie presence
+  const cookies = parseCookies(req);
+  const isAuth = cookies[COOKIE_NAME] === "1";
 
-  // Best effort parse
-  let user = "unknown";
-  try {
-    const obj = JSON.parse(sess);
-    if (obj?.u) user = String(obj.u);
-  } catch {
-    // fall through
+  if (!isAuth) {
+    // Not logged in
+    return json(401, { ok: false, user: null });
   }
-  return json({ ok: true, user: { username: user } });
+
+  const expectedUser = env.AUTH_USER || DEFAULT_USER;
+  return json(200, { ok: true, user: { username: expectedUser } });
 }
