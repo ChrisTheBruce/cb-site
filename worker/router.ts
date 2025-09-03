@@ -1,7 +1,7 @@
 // worker/router.ts
 import type { Env } from "./env";
 
-/** Minimal CORS helpers */
+/** CORS helpers */
 function corsify(res: Response, origin?: string) {
   const h = new Headers(res.headers);
   h.set("Access-Control-Allow-Origin", origin || "*");
@@ -14,20 +14,19 @@ function empty204(origin?: string) {
   return corsify(new Response(null, { status: 204 }), origin);
 }
 
-/** Resolve a handler function from a module with flexible export names */
-function pickHandler(mod: any, preferred: string[]): ((req: Request, env: Env) => Promise<Response> | Response) | null {
+/** Flexible export picker for dynamically-imported handler modules */
+function pickHandler(mod: any, preferred: string[]) {
   for (const name of preferred) {
     const fn = mod?.[name];
     if (typeof fn === "function") return fn;
   }
-  // common fallbacks
   if (typeof mod?.default === "function") return mod.default;
   if (typeof mod?.handle === "function") return mod.handle;
   if (typeof mod?.fetch === "function") return mod.fetch;
   return null;
 }
 
-/** Main API router (exported name must match worker/index.ts import) */
+/** Main API router (must be named handleApi to match worker/index.ts) */
 export async function handleApi(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -41,16 +40,15 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     return empty204(origin);
   }
 
-  // ---- /api/health ----
+  // ---- HEALTH ----
   if (path === "/api/health") {
-    // Dynamically import to avoid build-time name mismatches
     const mod = await import("./handlers/health");
     const fn = pickHandler(mod, ["health", "get"]);
-    const res = typeof fn === "function" ? await fn(req, env) : new Response("ok", { status: 200 });
+    const res = fn ? await fn(req, env) : new Response("ok", { status: 200 });
     return corsify(res, origin);
   }
 
-  // ---- AUTH primary paths (/api/auth/*) ----
+  // ---- AUTH primary paths ----
   if (path === "/api/auth/me" && req.method === "GET") {
     const mod = await import("./handlers/auth");
     const fn = pickHandler(mod, ["me"]);
@@ -70,7 +68,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     return corsify(res, origin);
   }
 
-  // ---- AUTH friendly aliases (/api/*) ----
+  // ---- AUTH aliases ----
   if (path === "/api/me" && req.method === "GET") {
     const mod = await import("./handlers/auth");
     const fn = pickHandler(mod, ["me"]);
@@ -90,15 +88,13 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     return corsify(res, origin);
   }
 
-  // ---- EMAIL (Downloads flow) ----
+  // ---- EMAIL / NOTIFY (Downloads flow) ----
   if (path === "/api/email" && req.method === "POST") {
     const mod = await import("./handlers/email");
     const fn = pickHandler(mod, ["email", "post", "send"]);
     const res = fn ? await fn(req, env) : new Response("Missing email handler", { status: 500 });
     return corsify(res, origin);
   }
-
-  // ---- NOTIFY (Downloads flow) ----
   if (path === "/api/notify" && req.method === "POST") {
     const mod = await import("./handlers/notify");
     const fn = pickHandler(mod, ["notify", "post", "send"]);
@@ -106,11 +102,14 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     return corsify(res, origin);
   }
 
-  // ---- 404 for unknown /api/* routes ----
+  // ---- CHAT (AI Gateway pass-through, streaming) ----
+  if (path === "/api/chat" && req.method === "POST") {
+    const mod = await import("./handlers/chat");
+    const fn = pickHandler(mod, ["chatStream", "stream"]);
+    const res = fn ? await fn(req, env) : new Response("Missing chat handler", { status: 500 });
+    return corsify(res, origin);
+  }
+
+  // Unknown
   return corsify(new Response(`No route: ${path}`, { status: 404 }), origin);
 }
-
-/**
- * If your worker/index.ts expects a default export, mirror it here:
- * export default { fetch: (req: Request, env: Env) => handleApi(req, env) };
- */

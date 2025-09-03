@@ -1,75 +1,41 @@
-// src/pages/Chat.jsx
-import { useEffect, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
-import { streamChat } from "../services/chat";
+import React, { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { useChat } from "@/hooks/useChat";
 
 export default function Chat() {
-  // ---- Auth guard must be INSIDE the component ----
-  const { user, loading } = useAuth();
-
-  // Chat state
-  const [messages, setMessages] = useState([
-    { role: "system", content: "You are a helpful assistant." },
-  ]);
+  // Gate: require auth (keeps consistent with login gating)
+  const { isAuthenticated, loading } = useAuth();
+  const { model, setModel, messages, send, cancel, clear, streaming } = useChat("gpt-4o");
   const [input, setInput] = useState("");
-  const [working, setWorking] = useState(false);
 
-  // Streaming helpers
-  const draftRef = useRef("");
-  const endRef = useRef(null);
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // While we don't know auth state yet, render nothing (or a spinner)
-  if (loading) return null;
-  // Not signed in? Go to login.
-  if (!user) return <Navigate to="/login" replace />;
-
-  async function onSend(e) {
-    e.preventDefault();
-    const content = input.trim();
-    if (!content) return;
-
-    const userMsg = { role: "user", content };
-    const history = [...messages, userMsg];
-
-    setMessages(history);
-    setInput("");
-    draftRef.current = "";
-    setWorking(true);
-
-    try {
-      // Stream assistant tokens as they arrive
-      for await (const chunk of streamChat(history /* , { model: 'gpt-4o-mini' } */)) {
-        draftRef.current += chunk;
-        setMessages([...history, { role: "assistant", content: draftRef.current }]);
-      }
-    } catch (err) {
-      const fail = (draftRef.current || "") + `\n[error: ${String(err)}]`;
-      setMessages([...history, { role: "assistant", content: fail }]);
-    } finally {
-      setWorking(false);
-    }
-  }
+  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
+  if (!isAuthenticated) return <div style={{ padding: 16 }}>You must sign in to use Chat.</div>;
 
   return (
-    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ marginBottom: 12 }}>Chat</h1>
+    <div style={{ maxWidth: 860, margin: "1.5rem auto", padding: "0 1rem" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14 }}>Model</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="gpt-4o">gpt-4o</option>
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+        </label>
+        {streaming ? (
+          <button onClick={cancel}>Stop</button>
+        ) : (
+          <button onClick={clear}>Clear</button>
+        )}
+      </div>
 
       <div
-        className="transcript"
         style={{
           border: "1px solid #ddd",
           borderRadius: 8,
           padding: 12,
-          minHeight: 320,
-          maxHeight: "60vh",
-          overflowY: "auto",
           background: "#fff",
+          minHeight: 280,
+          marginBottom: 12,
         }}
       >
         {messages
@@ -77,42 +43,42 @@ export default function Chat() {
           .map((m, i) => (
             <div
               key={i}
-              className={`msg ${m.role}`}
               style={{
                 whiteSpace: "pre-wrap",
                 padding: "8px 10px",
-                margin: "8px 0",
-                borderRadius: 8,
-                background: m.role === "user" ? "#eef6ff" : "#f7f7f7",
-                alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                borderRadius: 6,
+                margin: "6px 0",
+                background: m.role === "user" ? "#f6f6f6" : "transparent",
+                border: m.role === "user" ? "1px solid #eee" : "none",
               }}
             >
-              {m.content}
+              <strong style={{ color: "#666" }}>
+                {m.role === "user" ? "You" : "Assistant"}
+              </strong>
+              <div>{m.content}</div>
             </div>
           ))}
-        <div ref={endRef} />
       </div>
 
-      <form onSubmit={onSend} className="composer" style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const t = input;
+          setInput("");
+          send(t);
+        }}
+        style={{ display: "flex", gap: 8 }}
+      >
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type a message…"
-          disabled={working}
-          style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ccc" }}
+          rows={3}
+          style={{ flex: 1, padding: 8 }}
+          disabled={streaming}
         />
-        <button
-          disabled={working || !input.trim()}
-          style={{
-            padding: "10px 16px",
-            borderRadius: 8,
-            border: "1px solid #0b5cff",
-            background: working ? "#94b4ff" : "#0b5cff",
-            color: "#fff",
-            cursor: working ? "default" : "pointer",
-          }}
-        >
-          {working ? "Sending…" : "Send"}
+        <button type="submit" disabled={streaming || !input.trim()}>
+          Send
         </button>
       </form>
     </div>
