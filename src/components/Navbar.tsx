@@ -1,15 +1,14 @@
 import React from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function Navbar() {
   const { isAuthenticated, logout, loading } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const onSignIn = () => {
-    const next = encodeURIComponent(location.pathname + location.search);
-    navigate(`/login?next=${next}`);
+    // Always route to login with next=/Chat
+    navigate(`/login?next=${encodeURIComponent("/Chat")}`);
   };
 
   const onSignOut = async () => {
@@ -18,25 +17,8 @@ export default function Navbar() {
   };
 
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: 0,
-        background: "#f7fbfb",
-        borderBottom: "1px solid #e6e6e6",
-        zIndex: 10,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          padding: "12px 16px",
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-        }}
-      >
+    <header style={{ position: "sticky", top: 0, background: "#f7fbfb", borderBottom: "1px solid #e6e6e6", zIndex: 10 }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px", display: "flex", alignItems: "center", gap: 16 }}>
         <Link to="/" style={{ fontWeight: 700, textDecoration: "none", color: "#111" }}>
           Chris Brighouse
         </Link>
@@ -50,32 +32,11 @@ export default function Navbar() {
 
         <div style={{ marginLeft: 16 }}>
           {isAuthenticated ? (
-            <button
-              onClick={onSignOut}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "1px solid #222",
-                background: "#fff",
-                cursor: "pointer",
-              }}
-              disabled={loading}
-            >
+            <button onClick={onSignOut} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #222", background: "#fff", cursor: "pointer" }} disabled={loading}>
               Sign out
             </button>
           ) : (
-            <button
-              onClick={onSignIn}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "none",
-                background: "linear-gradient(135deg,#09d6c6,#09c2f6)",
-                color: "#fff",
-                cursor: "pointer",
-              }}
-              disabled={loading}
-            >
+            <button onClick={onSignIn} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#09d6c6,#09c2f6)", color: "#fff", cursor: "pointer" }} disabled={loading}>
               Sign in
             </button>
           )}

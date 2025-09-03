@@ -7,14 +7,17 @@ export default function Login() {
   const location = useLocation();
   const { isAuthenticated, login, loading } = useAuth();
 
-  const [username, setUsername] = useState("");      // no prefill
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const nextPath = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("next") || "/Chat";
+    const raw = params.get("next");
+    // Default to /Chat if missing, empty, or pointing to /
+    if (!raw || raw === "/" || raw.trim() === "") return "/Chat";
+    return raw;
   }, [location.search]);
 
   useEffect(() => {
@@ -111,7 +114,7 @@ export default function Login() {
             />
           </label>
 
-        <button
+          <button
             type="submit"
             disabled={busy || loading || !username || !password}
             style={{
