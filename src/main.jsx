@@ -1,12 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./index.css";
 import { AuthProvider } from "@/hooks/useAuth";
 
-// Optional: simple error boundary to avoid white screens if anything else throws.
-// If you already added one, keep your version and still wrap with <AuthProvider>.
+// Tiny error boundary so crashes don't white-screen
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -22,7 +20,9 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ padding: 24 }}>
           <h2>Something went wrong</h2>
-          <pre style={{ whiteSpace: "pre-wrap" }}>{String(this.state.error?.message || this.state.error)}</pre>
+          <pre style={{ whiteSpace: "pre-wrap" }}>
+            {String(this.state.error?.message || this.state.error)}
+          </pre>
         </div>
       );
     }
@@ -34,9 +34,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <App />
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>
