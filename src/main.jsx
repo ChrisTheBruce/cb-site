@@ -1,10 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./index.css";
 import { AuthProvider } from "@/hooks/useAuth";
 
-// Tiny error boundary so crashes don't white-screen
+// Minimal error boundary to avoid white screens
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -34,7 +35,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <App />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>
