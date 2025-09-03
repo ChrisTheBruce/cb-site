@@ -1,76 +1,101 @@
-// src/hooks/useAuth.tsx
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import * as Auth from "../services/auth";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-type AuthCtx = {
-  user: Auth.User | null;
+type Me = { username: string } | null;
+
+type AuthContextShape = {
+  isAuthenticated: boolean;
+  user: Me;
   loading: boolean;
-  error: string | null;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  signIn: (u: string, p: string) => Promise<Readonly<Auth.User>>;
-  signOut: () => Promise<void>;
 };
 
-const Ctx = createContext<AuthCtx | null>(null);
+const AuthContext = createContext<AuthContextShape | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Auth.User | null>(null);
+/**
+ * Provider that:
+ * - On mount, calls /api/me.
+ * - Treats 401 as "not signed in" (no throw).
+ * - Exposes login/logout helpers that hit your Worker handlers.
+ */
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<Me>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
-      const u = await Auth.me();
-      setUser(u);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
+      const res = await fetch("/api/me", { credentials: "include" });
+      if (res.status === 401) {
+        setUser(null);
+        return;
+      }
+      if (!res.ok) {
+        // soft-fail; don’t crash the app
+        console.warn("Failed to fetch /api/me:", res.status);
+        setUser(null);
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      setUser(data && typeof data === "object" ? data : null);
+    } catch (e) {
+      console.warn("Error calling /api/me", e);
       setUser(null);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    (async () => {
+      setLoading(true);
+      await refresh();
+      setLoading(false);
+    })();
   }, [refresh]);
 
-  const signIn = useCallback(
-    async (username: string, password: string) => {
-      setError(null);
-      const u = await Auth.login(username, password);
+  const login = useCallback(async (username: string, password: string) => {
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) return false;
       await refresh();
-      return u;
-    },
-    [refresh]
-  );
+      return true;
+    } catch (e) {
+      console.warn("login error:", e);
+      return false;
+    }
+  }, [refresh]);
 
-  const signOut = useCallback(async () => {
-    setError(null);
-    await Auth.logout();
-    setUser(null);
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/logout", { method: "POST", credentials: "include" });
+    } finally {
+      setUser(null);
+    }
   }, []);
 
-  const value = useMemo<AuthCtx>(
-    () => ({ user, loading, error, refresh, signIn, signOut }),
-    [user, loading, error, refresh, signIn, signOut]
-  );
+  const value = useMemo<AuthContextShape>(() => ({
+    isAuthenticated: !!user,
+    user,
+    loading,
+    login,
+    logout,
+    refresh,
+  }), [user, loading, login, logout, refresh]);
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth(): AuthCtx {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+/**
+ * Hook used by pages/components. Throws if you forgot to wrap in <AuthProvider>.
+ */
+export function useAuth(): AuthContextShape {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within <AuthProvider>");
+  }
   return ctx;
 }
-
