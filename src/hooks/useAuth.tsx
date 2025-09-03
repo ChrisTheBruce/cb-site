@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Run refresh exactly once, even under StrictMode double-invoke
+  // Run once (even under StrictMode)
   useEffect(() => {
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;
@@ -50,25 +50,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(async (username: string, password: string) => {
-    try {
-      const init: RequestInit = {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ username, password }),
-      };
-      const res = await fetchWithFallback("/api/login", init, "/api/auth/login");
-      if (!res.ok) {
-        let msg = ""; try { msg = await res.text(); } catch {}
-        console.warn("Login failed:", res.status, msg);
-        return false;
+    // Try a few common shapes so we match whatever your Worker expects
+    const attempts: Array<{ pathA: string; pathB: string; init: RequestInit }> = [
+      // JSON, { username, password }
+      {
+        pathA: "/api/login",
+        pathB: "/api/auth/login",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ username, password }),
+        },
+      },
+      // JSON, { user, pass }
+      {
+        pathA: "/api/login",
+        pathB: "/api/auth/login",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ user: username, pass: password }),
+        },
+      },
+      // form-urlencoded
+      {
+        pathA: "/api/login",
+        pathB: "/api/auth/login",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "include",
+          body: new URLSearchParams({ username, password }).toString(),
+        },
+      },
+    ];
+
+    for (const t of attempts) {
+      try {
+        const res = await fetchWithFallback(t.pathA, t.init, t.pathB);
+        if (res.ok) {
+          await refresh();
+          return true;
+        }
+        // If 400/401, try next shape; if 404/405, fallback already handled
+      } catch (e) {
+        // try next attempt
       }
-      await refresh();
-      return true;
-    } catch (e) {
-      console.warn("Login error:", e);
-      return false;
     }
+    return false;
   }, [refresh]);
 
   const logout = useCallback(async () => {

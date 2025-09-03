@@ -7,7 +7,7 @@ export default function Login() {
   const location = useLocation();
   const { isAuthenticated, login, loading } = useAuth();
 
-  const [username, setUsername] = useState("chris");
+  const [username, setUsername] = useState("");      // no prefill
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,9 +40,7 @@ export default function Login() {
 
   return (
     <div style={{ display: "grid", placeItems: "start center", minHeight: "60vh", padding: "2rem 1rem" }}>
-      {/* Scoped reset container to avoid global CSS bleeding in */}
       <div
-        className="cb-login"
         style={{
           all: "initial",
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
@@ -113,9 +111,9 @@ export default function Login() {
             />
           </label>
 
-          <button
+        <button
             type="submit"
-            disabled={busy || loading}
+            disabled={busy || loading || !username || !password}
             style={{
               all: "revert",
               marginTop: 4,
@@ -128,10 +126,6 @@ export default function Login() {
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
-
-          <div style={{ all: "revert", marginTop: 6, fontSize: 12, color: "#666" }}>
-            Hint: <code>chris / badcommand</code>
-          </div>
         </form>
       </div>
     </div>
