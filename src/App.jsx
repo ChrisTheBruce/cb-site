@@ -1,81 +1,49 @@
-// src/App.jsx — fixed imports + aligned to alias
-import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React from "react";
+import { Routes, Route } from "react-router-dom";
 
-import Navbar from '@/components/Navbar';
-import Work from '@/components/Work';
-import Downloads from '@/components/Downloads'; 
-import Footer from '@/components/Footer';
-import Experience from '@/components/Experience';
-import Contact from '@/components/Contact';
-import HomeHero from '@/components/HomeHero/HomeHero';
-import Login from '@/pages/Login.jsx';
-import Chat from '@/pages/Chat.jsx';
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 
-// Download-email context (unchanged)
-import { DownloadEmailProvider } from '@/context/DownloadEmailContext';
+import HomeHero from "@/components/HomeHero/HomeHero";
+import Work from "@/components/Work";
+import Experience from "@/components/Experience";
+import Contact from "@/components/Contact";
+import Downloads from "@/components/Downloads";
 
-function ProtectedRoute({ children }) {
-  const [allowed, setAllowed] = useState(null); // null = loading
+import Login from "@/pages/Login";
+import Chat from "@/pages/Chat";
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/me', { credentials: 'include' });
-        if (!cancelled) setAllowed(res.ok);
-      } catch {
-        if (!cancelled) setAllowed(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (allowed === null) return null; // or spinner/loader
-  return allowed ? children : <Navigate to="/login" replace />;
-}
-
-function Home() {
-  return (
-    <main id="main">
-      <HomeHero />
-      <Work />
-      <Downloads />
-      <Experience />
-      <Contact />
-    </main>
-  );
-}
+import RequireAuth from "@/components/RequireAuth";
 
 export default function App() {
   return (
-    <DownloadEmailProvider>
-      <BrowserRouter>
-        <Navbar />
-
+    <div className="app">
+      <Navbar />
+      <main style={{ minHeight: "60vh" }}>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/work" element={<Work />} />
-          <Route path="/experience" element={<Experience />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/downloads" element={<Downloads />} />
+          <Route path="/" element={<HomeHero />} />
+          <Route path="/Work" element={<Work />} />
+          <Route path="/Experience" element={<Experience />} />
+          <Route path="/Contact" element={<Contact />} />
+          <Route path="/Downloads" element={<Downloads />} />
 
           <Route path="/login" element={<Login />} />
+
+          {/* Protect Chat only (no other global redirects) */}
           <Route
-            path="/chat"
+            path="/Chat"
             element={
-              <ProtectedRoute>
+              <RequireAuth>
                 <Chat />
-              </ProtectedRoute>
+              </RequireAuth>
             }
           />
 
           {/* fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<HomeHero />} />
         </Routes>
-
-        <Footer />
-      </BrowserRouter>
-    </DownloadEmailProvider>
+      </main>
+      <Footer />
+    </div>
   );
 }
