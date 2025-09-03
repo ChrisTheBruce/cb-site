@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type Me = { username: string } | null;
 
@@ -13,43 +13,23 @@ type AuthContextShape = {
 
 const AuthContext = createContext<AuthContextShape | undefined>(undefined);
 
-// Helper: try a primary URL, fall back to an alternate if 404/405
-async function fetchWithFallback(
-  primary: RequestInfo,
-  init: RequestInit,
-  fallback: RequestInfo
-): Promise<Response> {
+// Helper: try primary URL, fall back to alternate if 404/405
+async function fetchWithFallback(primary: RequestInfo, init: RequestInit, fallback: RequestInfo) {
   const res = await fetch(primary, init);
-  if (res.status === 404 || res.status === 405) {
-    // endpoint shape mismatch — try the alternate path
-    return fetch(fallback, init);
-  }
+  if (res.status === 404 || res.status === 405) return fetch(fallback, init);
   return res;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<Me>(null);
   const [loading, setLoading] = useState(true);
+  const bootstrappedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
-      // Try /api/me first, then /api/auth/me
-      const res = await fetchWithFallback(
-        "/api/me",
-        { credentials: "include" },
-        "/api/auth/me"
-      );
-
-      if (res.status === 401) {
-        // Not signed in — normal pre-login state
-        setUser(null);
-        return;
-      }
-      if (!res.ok) {
-        console.warn("Auth refresh failed:", res.status);
-        setUser(null);
-        return;
-      }
+      const res = await fetchWithFallback("/api/me", { credentials: "include" }, "/api/auth/me");
+      if (res.status === 401) { setUser(null); return; }
+      if (!res.ok) { console.warn("Auth refresh failed:", res.status); setUser(null); return; }
       const data = await res.json().catch(() => null);
       setUser(data && typeof data === "object" ? data : null);
     } catch (e) {
@@ -58,7 +38,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Run refresh exactly once, even under StrictMode double-invoke
   useEffect(() => {
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
     (async () => {
       setLoading(true);
       await refresh();
@@ -68,20 +51,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     try {
-      const body = JSON.stringify({ username, password });
       const init: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body,
+        body: JSON.stringify({ username, password }),
       };
-
-      // Try /api/login first, then /api/auth/login
       const res = await fetchWithFallback("/api/login", init, "/api/auth/login");
       if (!res.ok) {
-        // Best-effort read of server message
-        let msg = "";
-        try { msg = await res.text(); } catch {}
+        let msg = ""; try { msg = await res.text(); } catch {}
         console.warn("Login failed:", res.status, msg);
         return false;
       }
@@ -95,8 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      const init: RequestInit = { method: "POST", credentials: "include" };
-      await fetchWithFallback("/api/logout", init, "/api/auth/logout");
+      await fetchWithFallback("/api/logout", { method: "POST", credentials: "include" }, "/api/auth/logout");
     } finally {
       setUser(null);
     }
