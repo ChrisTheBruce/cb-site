@@ -1,103 +1,116 @@
+// worker/router.ts
 import type { Env } from "./env";
-import { json, notFound, methodNotAllowed } from "./lib/responses";
 
-import * as auth from "./handlers/auth";
-import * as email from "./handlers/email";
-import * as health from "./handlers/health";
-import * as notify from "./handlers/notify";
-
-// Simple CORS helper for /api/*
-function withCors(res: Response, origin?: string) {
-  const hdrs = new Headers(res.headers);
-  hdrs.set("Access-Control-Allow-Origin", origin || "*");
-  hdrs.set("Access-Control-Allow-Credentials", "true");
-  hdrs.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  hdrs.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  return new Response(res.body, { status: res.status, headers: hdrs });
+/** Minimal CORS helpers */
+function corsify(res: Response, origin?: string) {
+  const h = new Headers(res.headers);
+  h.set("Access-Control-Allow-Origin", origin || "*");
+  h.set("Access-Control-Allow-Credentials", "true");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  return new Response(res.body, { status: res.status, headers: h });
+}
+function empty204(origin?: string) {
+  return corsify(new Response(null, { status: 204 }), origin);
 }
 
-function okEmptyCors(origin?: string) {
-  return withCors(new Response(null, { status: 204 }), origin);
+/** Resolve a handler function from a module with flexible export names */
+function pickHandler(mod: any, preferred: string[]): ((req: Request, env: Env) => Promise<Response> | Response) | null {
+  for (const name of preferred) {
+    const fn = mod?.[name];
+    if (typeof fn === "function") return fn;
+  }
+  // common fallbacks
+  if (typeof mod?.default === "function") return mod.default;
+  if (typeof mod?.handle === "function") return mod.handle;
+  if (typeof mod?.fetch === "function") return mod.fetch;
+  return null;
 }
 
-export async function route(req: Request, env: Env): Promise<Response> {
+/** Main API router (exported name must match worker/index.ts import) */
+export async function handleApi(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
+  const origin = req.headers.get("Origin") || undefined;
 
-  // Only manage /api/* here. Anything else should be handled upstream.
   if (!path.startsWith("/api/")) {
-    return notFound("Not an API route");
+    return corsify(new Response("Not an API route", { status: 404 }), origin);
   }
 
-  // Global CORS preflight for /api/*
   if (req.method === "OPTIONS") {
-    return okEmptyCors(req.headers.get("Origin") || undefined);
+    return empty204(origin);
   }
 
-  // --- HEALTH ---
+  // ---- /api/health ----
   if (path === "/api/health") {
-    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
-    const res = await health.health(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+    // Dynamically import to avoid build-time name mismatches
+    const mod = await import("./handlers/health");
+    const fn = pickHandler(mod, ["health", "get"]);
+    const res = typeof fn === "function" ? await fn(req, env) : new Response("ok", { status: 200 });
+    return corsify(res, origin);
   }
 
-  // --- AUTH (primary paths) ---
-  if (path === "/api/auth/me") {
-    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
-    const res = await auth.me(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+  // ---- AUTH primary paths (/api/auth/*) ----
+  if (path === "/api/auth/me" && req.method === "GET") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["me"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.me handler", { status: 500 });
+    return corsify(res, origin);
   }
-  if (path === "/api/auth/login") {
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await auth.login(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+  if (path === "/api/auth/login" && req.method === "POST") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["login"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.login handler", { status: 500 });
+    return corsify(res, origin);
   }
-  if (path === "/api/auth/logout") {
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await auth.logout(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
-  }
-
-  // --- AUTH (friendly aliases) ---
-  if (path === "/api/me") {
-    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
-    const res = await auth.me(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
-  }
-  if (path === "/api/login") {
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await auth.login(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
-  }
-  if (path === "/api/logout") {
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await auth.logout(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+  if (path === "/api/auth/logout" && req.method === "POST") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["logout"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.logout handler", { status: 500 });
+    return corsify(res, origin);
   }
 
-  // --- EMAIL / NOTIFY (used by Downloads flow) ---
-  if (path === "/api/email") {
-    // Adjust allowed methods if your handler expects POST only
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await email.email(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+  // ---- AUTH friendly aliases (/api/*) ----
+  if (path === "/api/me" && req.method === "GET") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["me"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.me handler", { status: 500 });
+    return corsify(res, origin);
+  }
+  if (path === "/api/login" && req.method === "POST") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["login"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.login handler", { status: 500 });
+    return corsify(res, origin);
+  }
+  if (path === "/api/logout" && req.method === "POST") {
+    const mod = await import("./handlers/auth");
+    const fn = pickHandler(mod, ["logout"]);
+    const res = fn ? await fn(req, env) : new Response("Missing auth.logout handler", { status: 500 });
+    return corsify(res, origin);
   }
 
-  if (path === "/api/notify") {
-    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
-    const res = await notify.notify(req, env);
-    return withCors(res, req.headers.get("Origin") || undefined);
+  // ---- EMAIL (Downloads flow) ----
+  if (path === "/api/email" && req.method === "POST") {
+    const mod = await import("./handlers/email");
+    const fn = pickHandler(mod, ["email", "post", "send"]);
+    const res = fn ? await fn(req, env) : new Response("Missing email handler", { status: 500 });
+    return corsify(res, origin);
   }
 
-  // Default 404 for unknown /api/* routes
-  return withCors(notFound(`No route: ${path}`), req.headers.get("Origin") || undefined);
+  // ---- NOTIFY (Downloads flow) ----
+  if (path === "/api/notify" && req.method === "POST") {
+    const mod = await import("./handlers/notify");
+    const fn = pickHandler(mod, ["notify", "post", "send"]);
+    const res = fn ? await fn(req, env) : new Response("Missing notify handler", { status: 500 });
+    return corsify(res, origin);
+  }
+
+  // ---- 404 for unknown /api/* routes ----
+  return corsify(new Response(`No route: ${path}`, { status: 404 }), origin);
 }
 
 /**
- * If your worker/index.ts expects a default export, re-export here:
- * export default { fetch: (req, env) => route(req, env) }
- * Otherwise, keep only the named export used by your worker entry.
+ * If your worker/index.ts expects a default export, mirror it here:
+ * export default { fetch: (req: Request, env: Env) => handleApi(req, env) };
  */
-
-// Optional: small self-test endpoint (disabled by default)
-// if (path === "/api/ping") return withCors(json({ ok: true }), req.headers.get("Origin") || undefined);
