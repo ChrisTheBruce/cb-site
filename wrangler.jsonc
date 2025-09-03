@@ -19,8 +19,6 @@
   "observability": { "enabled": true },
 
   "vars": {
-      "OPENAI_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai",
       "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/"
     }
-
   }
