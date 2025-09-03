@@ -13,33 +13,47 @@ type AuthContextShape = {
 
 const AuthContext = createContext<AuthContextShape | undefined>(undefined);
 
-/**
- * Provider that:
- * - On mount, calls /api/me.
- * - Treats 401 as "not signed in" (no throw).
- * - Exposes login/logout helpers that hit your Worker handlers.
- */
+// Helper: try a primary URL, fall back to an alternate if 404/405
+async function fetchWithFallback(
+  primary: RequestInfo,
+  init: RequestInit,
+  fallback: RequestInfo
+): Promise<Response> {
+  const res = await fetch(primary, init);
+  if (res.status === 404 || res.status === 405) {
+    // endpoint shape mismatch — try the alternate path
+    return fetch(fallback, init);
+  }
+  return res;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<Me>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/me", { credentials: "include" });
+      // Try /api/me first, then /api/auth/me
+      const res = await fetchWithFallback(
+        "/api/me",
+        { credentials: "include" },
+        "/api/auth/me"
+      );
+
       if (res.status === 401) {
+        // Not signed in — normal pre-login state
         setUser(null);
         return;
       }
       if (!res.ok) {
-        // soft-fail; don’t crash the app
-        console.warn("Failed to fetch /api/me:", res.status);
+        console.warn("Auth refresh failed:", res.status);
         setUser(null);
         return;
       }
       const data = await res.json().catch(() => null);
       setUser(data && typeof data === "object" ? data : null);
     } catch (e) {
-      console.warn("Error calling /api/me", e);
+      console.warn("Auth refresh error:", e);
       setUser(null);
     }
   }, []);
@@ -54,24 +68,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     try {
-      const res = await fetch("/api/login", {
+      const body = JSON.stringify({ username, password });
+      const init: RequestInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ username, password }),
-      });
-      if (!res.ok) return false;
+        body,
+      };
+
+      // Try /api/login first, then /api/auth/login
+      const res = await fetchWithFallback("/api/login", init, "/api/auth/login");
+      if (!res.ok) {
+        // Best-effort read of server message
+        let msg = "";
+        try { msg = await res.text(); } catch {}
+        console.warn("Login failed:", res.status, msg);
+        return false;
+      }
       await refresh();
       return true;
     } catch (e) {
-      console.warn("login error:", e);
+      console.warn("Login error:", e);
       return false;
     }
   }, [refresh]);
 
   const logout = useCallback(async () => {
     try {
-      await fetch("/api/logout", { method: "POST", credentials: "include" });
+      const init: RequestInit = { method: "POST", credentials: "include" };
+      await fetchWithFallback("/api/logout", init, "/api/auth/logout");
     } finally {
       setUser(null);
     }
@@ -89,13 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-/**
- * Hook used by pages/components. Throws if you forgot to wrap in <AuthProvider>.
- */
 export function useAuth(): AuthContextShape {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within <AuthProvider>");
-  }
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
   return ctx;
 }

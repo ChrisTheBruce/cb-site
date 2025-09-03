@@ -1,238 +1,103 @@
-// worker/router.ts
-// API router. Exports `handleApi` for worker/index.ts.
+import type { Env } from "./env";
+import { json, notFound, methodNotAllowed } from "./lib/responses";
 
-import { chat } from "./handlers/chat";
 import * as auth from "./handlers/auth";
 import * as email from "./handlers/email";
-import * as notify from "./handlers/notify";
 import * as health from "./handlers/health";
+import * as notify from "./handlers/notify";
 
-type Env = {
-  OPENAI_API: string;
-  OPENAI_BASE?: string;
-};
-
-type Handler = (req: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
-
-type Route = {
-  method: string;
-  path: string; // exact match
-  handler: Handler;
-};
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-};
-
-function json(status: number, data: unknown) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
+// Simple CORS helper for /api/*
+function withCors(res: Response, origin?: string) {
+  const hdrs = new Headers(res.headers);
+  hdrs.set("Access-Control-Allow-Origin", origin || "*");
+  hdrs.set("Access-Control-Allow-Credentials", "true");
+  hdrs.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  hdrs.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  return new Response(res.body, { status: res.status, headers: hdrs });
 }
 
-function withCors(res: Response) {
-  const h = new Headers(res.headers);
-  Object.entries(CORS).forEach(([k, v]) => {
-    if (!h.has(k)) h.set(k, v);
-  });
-  return new Response(res.body, { status: res.status, headers: h });
+function okEmptyCors(origin?: string) {
+  return withCors(new Response(null, { status: 204 }), origin);
 }
 
-function isApi(pathname: string) {
-  return pathname.startsWith("/api/");
-}
-
-// Resolve a callable from a statically imported module by trying common names
-function resolveExport(mod: Record<string, unknown>, names: string[]): Handler | null {
-  for (const n of names) {
-    const f = mod[n];
-    if (typeof f === "function") return f as Handler;
-  }
-  const def = mod.default;
-  if (typeof def === "function") return def as Handler;
-  return null;
-}
-
-// Wrap call so non-Response returns are turned into JSON
-async function invoke(handler: Handler, req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const result = await handler(req, env, ctx);
-  if (result instanceof Response) return result;
-  if (result === undefined) return new Response(null, { status: 204, headers: CORS });
-  return json(200, result);
-}
-
-// ---- Route table (static imports, resilient export resolution) ----
-const routes: Route[] = [
-  // Streaming chat via CF AI Gateway → OpenAI
-  { method: "POST", path: "/api/chat", handler: chat as Handler },
-
-  // Health
-  {
-    method: "GET",
-    path: "/api/health",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(health as unknown as Record<string, unknown>, [
-        "health",
-        "handleHealth",
-        "handle",
-        "get",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/health" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-
-  // Notifications
-  {
-    method: "POST",
-    path: "/api/notify",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(notify as unknown as Record<string, unknown>, [
-        "notify",
-        "handleNotify",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/notify" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-
-  // Email
-  {
-    method: "POST",
-    path: "/api/email",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(email as unknown as Record<string, unknown>, [
-        "email",
-        "send",
-        "handleEmail",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/email" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-
-  // Auth (new paths)
-  {
-    method: "POST",
-    path: "/api/auth/login",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "login",
-        "handleLogin",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (login)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-  {
-    method: "POST",
-    path: "/api/auth/logout",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "logout",
-        "handleLogout",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (logout)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-  {
-    method: "GET",
-    path: "/api/auth/me",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "me",
-        "profile",
-        "handleMe",
-        "handle",
-        "get",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (me)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-
-  // Auth (legacy aliases to avoid breaking the UI)
-  {
-    method: "POST",
-    path: "/api/login",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "login",
-        "handleLogin",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (login)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-  {
-    method: "POST",
-    path: "/api/logout",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "logout",
-        "handleLogout",
-        "handle",
-        "post",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (logout)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-  {
-    method: "GET",
-    path: "/api/me",
-    handler: async (req, env, ctx) => {
-      const fn = resolveExport(auth as unknown as Record<string, unknown>, [
-        "me",
-        "profile",
-        "handleMe",
-        "handle",
-        "get",
-      ]);
-      if (!fn) return json(501, { error: "No callable export in handlers/auth (me)" });
-      return invoke(fn, req, env, ctx);
-    },
-  },
-];
-
-function findRoute(method: string, pathname: string): Route | undefined {
-  return routes.find((r) => r.method === method && r.path === pathname);
-}
-
-// Named export used by worker/index.ts
-export async function handleApi(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+export async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
+  const path = url.pathname;
 
-  if (!isApi(url.pathname)) {
-    return new Response("Not an API route", { status: 404 });
+  // Only manage /api/* here. Anything else should be handled upstream.
+  if (!path.startsWith("/api/")) {
+    return notFound("Not an API route");
   }
 
+  // Global CORS preflight for /api/*
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
+    return okEmptyCors(req.headers.get("Origin") || undefined);
   }
 
-  const route = findRoute(req.method, url.pathname);
-  if (!route) return json(404, { error: "Not found", path: url.pathname, method: req.method });
-
-  try {
-    const res = await route.handler(req, env, ctx);
-    return withCors(res);
-  } catch (err: any) {
-    // Return structured error so you can see it in DevTools
-    return json(500, { error: "Unhandled exception", detail: String(err?.message || err) });
+  // --- HEALTH ---
+  if (path === "/api/health") {
+    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
+    const res = await health.health(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
   }
+
+  // --- AUTH (primary paths) ---
+  if (path === "/api/auth/me") {
+    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
+    const res = await auth.me(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+  if (path === "/api/auth/login") {
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await auth.login(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+  if (path === "/api/auth/logout") {
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await auth.logout(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+
+  // --- AUTH (friendly aliases) ---
+  if (path === "/api/me") {
+    if (req.method !== "GET") return withCors(methodNotAllowed("GET required"), req.headers.get("Origin") || undefined);
+    const res = await auth.me(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+  if (path === "/api/login") {
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await auth.login(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+  if (path === "/api/logout") {
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await auth.logout(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+
+  // --- EMAIL / NOTIFY (used by Downloads flow) ---
+  if (path === "/api/email") {
+    // Adjust allowed methods if your handler expects POST only
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await email.email(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+
+  if (path === "/api/notify") {
+    if (req.method !== "POST") return withCors(methodNotAllowed("POST required"), req.headers.get("Origin") || undefined);
+    const res = await notify.notify(req, env);
+    return withCors(res, req.headers.get("Origin") || undefined);
+  }
+
+  // Default 404 for unknown /api/* routes
+  return withCors(notFound(`No route: ${path}`), req.headers.get("Origin") || undefined);
 }
+
+/**
+ * If your worker/index.ts expects a default export, re-export here:
+ * export default { fetch: (req, env) => route(req, env) }
+ * Otherwise, keep only the named export used by your worker entry.
+ */
+
+// Optional: small self-test endpoint (disabled by default)
+// if (path === "/api/ping") return withCors(json({ ok: true }), req.headers.get("Origin") || undefined);
