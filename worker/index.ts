@@ -36,7 +36,7 @@ export default {
       if (isDebug(env)) {
       console.log('⚙️  Debug mode enabled by isDebug(env)');
       }
-      DBG(env, "also from DBG function");
+      DBG("also from DBG function");
 
       // --- NEW: Stage 1 streaming stub (no OpenAI yet) ---
       // Intercept only POST /api/chat/stream and stream an echo of the last user message.

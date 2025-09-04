@@ -10,10 +10,17 @@ export function isDebug(env: { DEBUG_MODE?: string }): boolean {
   return env.DEBUG_MODE === "true";
 }
 
+/*
 export function DBG(env: { DEBUG_MODE?: unknown }, ...args: any[]): void {
   if (isDebug(env)) {
     console.log("🐛 DBG:", ...args);
   }
+*/
+export function DBG( ...args: any[]): void {
+  if (isDebug(env)) {
+    console.log( ...args);
+  }
+
 }
 
 

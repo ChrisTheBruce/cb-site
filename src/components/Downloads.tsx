@@ -1,6 +1,7 @@
 import * as React from "react";
 import EmailBadge from "@/components/EmailBadge";
 import { useDlEmail } from "@/hooks/useDlEmail";
+import { DBG } from "../../worker/env";
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -41,8 +42,8 @@ export default function Downloads() {
 
     // best-effort notify (non-blocking)
     try {
-      DBG(env,"in Notify Downloads (onClickDownload)")
-      
+      DBG("in Notify Downloads (onClickDownload)")
+
       const r = await notify(path, title);
       if ((r as any).warn === "mail_notify_failed") {
         console.warn("Support email notify failed server-side.");
