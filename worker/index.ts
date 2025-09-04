@@ -22,7 +22,7 @@ export default {
           },
         });
       }
-
+      console.log("Hello from the Worker");
       if (isDebug(env)) {
       console.log('⚙️ Debug mode enabled');
       }
