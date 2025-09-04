@@ -1,11 +1,33 @@
 import * as React from "react";
 import EmailBadge from "@/components/EmailBadge";
 import { useDlEmail } from "@/hooks/useDlEmail";
-import { DBG } from "../../worker/env";
+
+/**
+ * SAFE client-side debug logger (no Worker env import on the client).
+ * Set window.__DEBUG__ = true in DevTools to see logs.
+ */
+const DBG = (...args: any[]) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = (window as any) || {};
+    if (w.__DEBUG__) console.debug("[Downloads]", ...args);
+  } catch {
+    /* no-op */
+  }
+};
 
 function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" x2="12" y1="15" y2="3" />
@@ -13,83 +35,144 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Adjust this to match your Worker/Pages function route,
+ * or set VITE_DOWNLOAD_NOTIFY_ENDPOINT in your env.
+ */
+const NOTIFY_ENDPOINT =
+  (import.meta as any)?.env?.VITE_DOWNLOAD_NOTIFY_ENDPOINT || "/api/download-notify";
+
+type DownloadItem = {
+  title: string;
+  path: string;
+  description?: string;
+  size?: string;
+};
+
+// Update these paths/titles to match your assets if needed.
+const items: DownloadItem[] = [
+  { title: "Chris-Brighouse-CV.pdf", path: "/assets/Chris-Brighouse-CV.pdf" },
+  {
+    title: "Chris_Consulting_Services_SinglePage.pdf",
+    path: "/assets/Chris_Consulting_Services_SinglePage.pdf",
+  },
+];
+
+async function notifyDownload(
+  endpoint: string,
+  payload: Record<string, unknown>
+): Promise<boolean> {
+  const body = JSON.stringify(payload);
+
+  // Try Beacon first (best during page unload)
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const ok = navigator.sendBeacon(
+        endpoint,
+        new Blob([body], { type: "application/json" })
+      );
+      if (ok) {
+        DBG("notify sent via sendBeacon");
+        return true;
+      }
+    }
+  } catch (err) {
+    DBG("sendBeacon failed", err);
+  }
+
+  // Fallback: fetch with keepalive
+  try {
+    await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    });
+    DBG("notify sent via fetch keepalive");
+    return true;
+  } catch (err) {
+    DBG("keepalive fetch failed", err);
+    return false;
+  }
+}
 
 export default function Downloads() {
-  const { email, submitEmail, clear, busy, error, notify } = useDlEmail();
+  // Hook for capturing and exposing email on the page
+  const dl = useDlEmail() as {
+    email?: string | null;
+    ensureEmail?: () => Promise<string | false>;
+  };
 
-  async function ensureEmail(): Promise<string | null> {
-    if (email && EMAIL_REGEX.test(email)) return email;
-    const entered = (prompt("Enter your email to access downloads:") || "").trim();
-    if (!EMAIL_REGEX.test(entered)) {
-      if (entered) alert("Please enter a valid email address.");
-      return null;
-    }
-    const resp = await submitEmail(entered);
-    if (!(resp as any).ok) {
-      alert((resp as any).error || "Email not accepted");
-      return null;
-    }
-    return entered;
-  }
+  const email = dl?.email ?? null;
 
   async function onClickDownload(path: string, title?: string) {
-    const ok = await ensureEmail();
-    if (!ok) return;
-
-    // trigger the download
-    window.location.href = path;
-
-    // best-effort notify (non-blocking)
     try {
-      DBG("in Notify Downloads (onClickDownload)")
+      // Ensure we have an email before proceeding
+      const ensured = (await dl?.ensureEmail?.()) || false;
+      if (!ensured) return;
 
-      const r = await notify(path, title);
-      if ((r as any).warn === "mail_notify_failed") {
-        console.warn("Support email notify failed server-side.");
+      // Build a small payload for the notify endpoint
+      const payload = {
+        path,
+        title,
+        email: ensured, // string email returned by ensureEmail
+        ts: Date.now(),
+        ua: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+      };
+
+      // Fire-and-forget notify BEFORE navigating
+      void notifyDownload(NOTIFY_ENDPOINT, payload);
+
+      // Start the download last
+      window.location.href = path;
+    } catch (err) {
+      DBG("onClickDownload error", err);
+      // Even if notify fails, still attempt the download
+      try {
+        window.location.href = path;
+      } catch {
+        /* no-op */
       }
-    } catch {
-      /* ignore */
     }
   }
 
-  // Adjust these to match your real asset paths
-  const items = [
-    { title: "Chris-Brighouse-CV.pdf", path: "/assets/Chris-Brighouse-CV.pdf" },
-    { title: "Chris_Consulting_Services_SinglePage.pdf", path: "/assets/Chris_Consulting_Services_SinglePage.pdf" },
-  ];
-
   return (
-    <section id="downloads" className="py-20 scroll-mt-20 bg-white">
-      <div className="container mx-auto px-6">
-        {/* Centered badge above the title */}
-        <div className="mb-3 text-center">
-          <EmailBadge
-            email={email}
-            onClear={clear}
-            busy={busy}
-            error={error}
-            className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-sm text-gray-800"
-          />
+    <section className="py-12 sm:py-16">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+        {/* Centered email above the title */}
+        <div className="mb-6 flex justify-center">
+          <EmailBadge email={email ?? undefined} />
         </div>
 
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Resources &amp; Downloads</h2>
-          <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">Click to download more information on my services</p>
+        <div className="text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            Downloads
+          </h1>
+          <p className="mt-2 text-gray-600">
+            Click to download. We’ll send a short notification to our system so we
+            can support you better.
+          </p>
         </div>
 
-        <div className="max-w-2xl mx-auto bg-gray-50 p-8 rounded-lg border border-gray-200">
-          <h3 className="font-semibold text-lg text-gray-800 mb-4">Click on an item to download it:</h3>
-          <div className="not-prose mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
-            {items.map(it => (
+        <div className="mt-10">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {items.map((it) => (
               <button
                 key={it.path}
                 type="button"
                 onClick={() => onClickDownload(it.path, it.title)}
-                className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100"
+                className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-4 py-3 text-sm font-medium text-gray-800 bg-white hover:bg-gray-100 shadow-sm"
               >
                 <DownloadIcon className="h-4 w-4" />
-                {it.title}
+                <span className="text-left">
+                  <span className="block">{it.title}</span>
+                  {it.description && (
+                    <span className="block text-xs text-gray-500">{it.description}</span>
+                  )}
+                  {it.size && (
+                    <span className="block text-xs text-gray-400">Size: {it.size}</span>
+                  )}
+                </span>
               </button>
             ))}
           </div>
