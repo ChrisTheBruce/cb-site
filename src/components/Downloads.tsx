@@ -41,6 +41,8 @@ export default function Downloads() {
 
     // best-effort notify (non-blocking)
     try {
+      DBG(env,"in Notify Downloads (onClickDownload)")
+      
       const r = await notify(path, title);
       if ((r as any).warn === "mail_notify_failed") {
         console.warn("Support email notify failed server-side.");
