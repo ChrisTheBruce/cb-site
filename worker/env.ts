@@ -3,4 +3,5 @@ export interface Env {
   AUTH_SECRET: string;          // wrangler secret
   FROM_ADDRESS?: string;        // optional override, default used if missing
   SUPPORT_EMAIL?: string;       // optional override, default used if missing
+  DEBUG_MODE?: string;          // optional override, default used if missing 
 }
