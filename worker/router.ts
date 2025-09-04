@@ -1,11 +1,10 @@
 // worker/router.ts
-import { DBG } from "./env";           // uses your existing logger (no env arg)
+import { DBG } from "./env";           // your existing logger
 import { emailRoutes } from "./handlers/email";
 
 export interface Env {
   DL_EMAIL_COOKIE_NAME?: string;
   DEBUG_MODE?: string; // "1" | "true" | "yes" | "on"
-  // other bindings as needed
 }
 
 /* ------------ small helpers -------------- */
@@ -29,20 +28,16 @@ function corsHeaders(req: Request): Headers {
   return h;
 }
 
-function withCors(req: Request, res: Response): Response {
+function withCorsAndSig(req: Request, res: Response): Response {
   const headers = new Headers(res.headers);
   const cors = corsHeaders(req);
   for (const [k, v] of cors.entries()) headers.set(k, v);
+  headers.set("X-CB-Router", "1"); // signature header to prove this router handled it
   return new Response(res.body, { status: res.status, headers });
 }
 
 function handleOptions(req: Request): Response {
   return new Response(null, { status: 204, headers: corsHeaders(req) });
-}
-
-function toBool(x: any): boolean {
-  const s = String(x ?? "").toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 function ridOf(req: Request): string {
@@ -73,7 +68,6 @@ function expireCookie(name: string, domain?: string): string {
 }
 
 /* --------- /api/download-notify (minimal) ---------- */
-// mask email like "ab***@domain.com" for logs
 function maskEmail(e?: string): string | undefined {
   if (!e || typeof e !== "string") return undefined;
   const [user, dom] = e.split("@");
@@ -121,6 +115,13 @@ export async function handleApi(
       return handleOptions(request);
     }
 
+    // ---- Healthcheck / signature ----
+    if (request.method === "GET" && url.pathname === "/api/ping") {
+      DBG("hit /api/ping", JSON.stringify({ rid: ridOf(request) }));
+      const resp = json({ ok: true, router: "cb", ts: Date.now() }, { status: 200 });
+      return withCorsAndSig(request, resp);
+    }
+
     // ---- HARDENED: clear email route handled inline first ----
     if (request.method === "POST" && url.pathname === "/api/email/clear") {
       DBG("hit /api/email/clear (inline)", JSON.stringify({ rid: ridOf(request) }));
@@ -142,7 +143,7 @@ export async function handleApi(
         DBG("inline clear error", String((e as any)?.message || e));
       }
 
-      return withCors(
+      return withCorsAndSig(
         request,
         new Response(JSON.stringify({ ok: true }), { status: 200, headers })
       );
@@ -152,34 +153,33 @@ export async function handleApi(
     const emailRes = await emailRoutes(request, env);
     if (emailRes) {
       DBG("emailRoutes handled", JSON.stringify({ rid: ridOf(request), path: url.pathname }));
-      return withCors(request, emailRes);
+      return withCorsAndSig(request, emailRes);
     }
 
     // Runtime debug config for the client (used by main.jsx)
     if (request.method === "GET" && url.pathname === "/api/debug-config") {
-      const body = { debug: toBool(env.DEBUG_MODE) };
+      const body = { debug: ["1","true","yes","on"].includes(String(env.DEBUG_MODE ?? "").toLowerCase()) };
       DBG("hit /api/debug-config", JSON.stringify({ rid: ridOf(request), body }));
       const resp = json(body, { headers: { "cache-control": "no-store" } });
-      return withCors(request, resp);
+      return withCorsAndSig(request, resp);
     }
 
     // Download notify endpoint
     if (request.method === "POST" && url.pathname === "/api/download-notify") {
       const res = await downloadNotifyHandler(request, env);
-      return withCors(request, res);
+      return withCorsAndSig(request, res);
     }
 
     DBG("fallback 404", JSON.stringify({ rid: ridOf(request), path: url.pathname }));
-    return withCors(request, new Response("Not found", { status: 404 }));
+    return withCorsAndSig(request, new Response("Not found", { status: 404 }));
   } catch (err: any) {
     const rid = ridOf(request) || (globalThis as any).crypto?.randomUUID?.() || "no-ray";
     DBG("router fatal", JSON.stringify({ rid, err: err?.message || String(err) }));
-    return withCors(
+    return withCorsAndSig(
       request,
       json({ ok: false, error: "Internal error", rid }, { status: 500 })
     );
   }
 }
 
-// Also export default for Workers that expect it.
 export default { fetch: handleApi };
