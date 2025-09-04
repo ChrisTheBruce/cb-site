@@ -1,115 +1,96 @@
 // worker/router.ts
-import type { Env } from "./env";
+import { emailRoutes } from "./handlers/email";
 
-/** CORS helpers */
-function corsify(res: Response, origin?: string) {
-  const h = new Headers(res.headers);
-  h.set("Access-Control-Allow-Origin", origin || "*");
-  h.set("Access-Control-Allow-Credentials", "true");
-  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  return new Response(res.body, { status: res.status, headers: h });
-}
-function empty204(origin?: string) {
-  return corsify(new Response(null, { status: 204 }), origin);
+export interface Env {
+  // Optional cookie name override used by handlers/email.ts
+  DL_EMAIL_COOKIE_NAME?: string;
+
+  // You can add other env bindings here (KV, secrets, etc.) as needed.
+  // MAILCHANNELS_KEY?: string;
 }
 
-/** Flexible export picker for dynamically-imported handler modules */
-function pickHandler(mod: any, preferred: string[]) {
-  for (const name of preferred) {
-    const fn = mod?.[name];
-    if (typeof fn === "function") return fn;
+/* ------------ small helpers -------------- */
+
+function json(data: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json; charset=utf-8");
   }
-  if (typeof mod?.default === "function") return mod.default;
-  if (typeof mod?.handle === "function") return mod.handle;
-  if (typeof mod?.fetch === "function") return mod.fetch;
-  return null;
+  return new Response(JSON.stringify(data), { ...init, headers });
 }
 
-/** Main API router (must be named handleApi to match worker/index.ts) */
-export async function handleApi(req: Request, env: Env): Promise<Response> {
-  const url = new URL(req.url);
-  const path = url.pathname;
-  const origin = req.headers.get("Origin") || undefined;
-
-  if (!path.startsWith("/api/")) {
-    return corsify(new Response("Not an API route", { status: 404 }), origin);
-  }
-
-  if (req.method === "OPTIONS") {
-    return empty204(origin);
-  }
-
-  // ---- HEALTH ----
-  if (path === "/api/health") {
-    const mod = await import("./handlers/health");
-    const fn = pickHandler(mod, ["health", "get"]);
-    const res = fn ? await fn(req, env) : new Response("ok", { status: 200 });
-    return corsify(res, origin);
-  }
-
-  // ---- AUTH primary paths ----
-  if (path === "/api/auth/me" && req.method === "GET") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["me"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.me handler", { status: 500 });
-    return corsify(res, origin);
-  }
-  if (path === "/api/auth/login" && req.method === "POST") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["login"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.login handler", { status: 500 });
-    return corsify(res, origin);
-  }
-  if (path === "/api/auth/logout" && req.method === "POST") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["logout"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.logout handler", { status: 500 });
-    return corsify(res, origin);
-  }
-
-  // ---- AUTH aliases ----
-  if (path === "/api/me" && req.method === "GET") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["me"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.me handler", { status: 500 });
-    return corsify(res, origin);
-  }
-  if (path === "/api/login" && req.method === "POST") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["login"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.login handler", { status: 500 });
-    return corsify(res, origin);
-  }
-  if (path === "/api/logout" && req.method === "POST") {
-    const mod = await import("./handlers/auth");
-    const fn = pickHandler(mod, ["logout"]);
-    const res = fn ? await fn(req, env) : new Response("Missing auth.logout handler", { status: 500 });
-    return corsify(res, origin);
-  }
-
-  // ---- EMAIL / NOTIFY (Downloads flow) ----
-  if (path === "/api/email" && req.method === "POST") {
-    const mod = await import("./handlers/email");
-    const fn = pickHandler(mod, ["email", "post", "send"]);
-    const res = fn ? await fn(req, env) : new Response("Missing email handler", { status: 500 });
-    return corsify(res, origin);
-  }
-  if (path === "/api/notify" && req.method === "POST") {
-    const mod = await import("./handlers/notify");
-    const fn = pickHandler(mod, ["notify", "post", "send"]);
-    const res = fn ? await fn(req, env) : new Response("Missing notify handler", { status: 500 });
-    return corsify(res, origin);
-  }
-
-  // ---- CHAT (AI Gateway pass-through, streaming) ----
-  if (path === "/api/chat" && req.method === "POST") {
-    const mod = await import("./handlers/chat");
-    const fn = pickHandler(mod, ["chatStream", "stream"]);
-    const res = fn ? await fn(req, env) : new Response("Missing chat handler", { status: 500 });
-    return corsify(res, origin);
-  }
-
-  // Unknown
-  return corsify(new Response(`No route: ${path}`, { status: 404 }), origin);
+function corsHeaders(req: Request): Headers {
+  const h = new Headers();
+  const origin = req.headers.get("Origin") || "*";
+  h.set("Access-Control-Allow-Origin", origin);
+  h.set("Vary", "Origin");
+  h.set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  h.set("Access-Control-Allow-Headers", "content-type,authorization");
+  h.set("Access-Control-Max-Age", "86400");
+  return h;
 }
+
+function withCors(req: Request, res: Response): Response {
+  const headers = new Headers(res.headers);
+  const cors = corsHeaders(req);
+  for (const [k, v] of cors.entries()) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
+function handleOptions(req: Request): Response {
+  // CORS preflight
+  return new Response(null, { status: 204, headers: corsHeaders(req) });
+}
+
+/* --------- /api/download-notify (minimal) ---------- */
+/* Accepts POSTs from navigator.sendBeacon or fetch(keepalive) */
+async function downloadNotifyHandler(req: Request, _env: Env): Promise<Response> {
+  let payload: any = {};
+  try {
+    if ((req.headers.get("content-type") || "").includes("application/json")) {
+      payload = await req.json();
+    }
+  } catch {
+    // ignore parse errors, keep payload {}
+  }
+
+  // Log a compact line for Wrangler tail correlation
+  try {
+    const { path, title, email, ts, ua } = payload || {};
+    console.log(
+      "notify: download",
+      JSON.stringify({ path, title, email, ts, ua, reqId: req.headers.get("cf-ray") || null })
+    );
+  } catch {
+    // ignore logging failures
+  }
+
+  // If you later wire MailChannels, enqueue it here and still return fast.
+  return json({ ok: true }, { status: 200 });
+}
+
+/* --------------- main fetch router ---------------- */
+
+export default {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    // Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return handleOptions(request);
+    }
+
+    // Email routes (/api/email, /api/email/clear)
+    const emailRes = await emailRoutes(request, env);
+    if (emailRes) return withCors(request, emailRes);
+
+    // Other API routes
+    const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname === "/api/download-notify") {
+      const res = await downloadNotifyHandler(request, env);
+      return withCors(request, res);
+    }
+
+    // Fallback
+    return withCors(request, new Response("Not found", { status: 404 }));
+  },
+};
