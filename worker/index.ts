@@ -31,7 +31,8 @@ export default {
           },
         });
       }
-
+      
+      // Debug checking
       if (isDebug(env)) {
       console.log('⚙️  Debug mode enabled by isDebug(env)');
       }
