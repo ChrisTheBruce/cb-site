@@ -2,7 +2,7 @@ import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
 import { bad } from "./lib/responses";
-import { getDebugMode } from './env';
+import { getDebugMode } from './config';
 
 
 export default {
