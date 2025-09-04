@@ -8,7 +8,9 @@ export interface Env {
   // Toggleable debug flag (stringy truthy: "1", "true", "yes", "on")
   DEBUG_MODE?: string;
 
-  // MAILCHANNELS_KEY?: string; // etc
+  // Add your other bindings here as needed, e.g.:
+  // MAILCHANNELS_KEY?: string;
+  // NOTIFY_QUEUE?: Queue;
 }
 
 /* ------------ small helpers -------------- */
@@ -72,41 +74,47 @@ async function downloadNotifyHandler(req: Request, _env: Env): Promise<Response>
     // ignore logging failures
   }
 
-  // If you later wire MailChannels, enqueue it here and still return fast.
+  // If you later wire MailChannels or a Queue, do it here and still return fast.
   return json({ ok: true }, { status: 200 });
 }
 
 /* --------------- main fetch router ---------------- */
 
-export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return handleOptions(request);
-    }
+export async function handleApi(
+  request: Request,
+  env: Env,
+  _ctx: ExecutionContext
+): Promise<Response> {
+  // Handle CORS preflight early
+  if (request.method === "OPTIONS") {
+    return handleOptions(request);
+  }
 
-    // Email routes (/api/email, /api/email/clear)
-    const emailRes = await emailRoutes(request, env);
-    if (emailRes) return withCors(request, emailRes);
+  // Email routes (/api/email, /api/email/clear)
+  const emailRes = await emailRoutes(request, env);
+  if (emailRes) return withCors(request, emailRes);
 
-    // Other API routes
-    const url = new URL(request.url);
+  // Other API routes
+  const url = new URL(request.url);
 
-    // --- NEW: runtime debug config for the client (used by main.jsx) ---
-    if (request.method === "GET" && url.pathname === "/api/debug-config") {
-      const resp = json(
-        { debug: toBool(env.DEBUG_MODE) },
-        { headers: { "cache-control": "no-store" } }
-      );
-      return withCors(request, resp);
-    }
+  // Runtime debug config for the client (used by main.jsx)
+  if (request.method === "GET" && url.pathname === "/api/debug-config") {
+    const resp = json(
+      { debug: toBool(env.DEBUG_MODE) },
+      { headers: { "cache-control": "no-store" } }
+    );
+    return withCors(request, resp);
+  }
 
-    if (request.method === "POST" && url.pathname === "/api/download-notify") {
-      const res = await downloadNotifyHandler(request, env);
-      return withCors(request, res);
-    }
+  // Download notify endpoint
+  if (request.method === "POST" && url.pathname === "/api/download-notify") {
+    const res = await downloadNotifyHandler(request, env);
+    return withCors(request, res);
+  }
 
-    // Fallback
-    return withCors(request, new Response("Not found", { status: 404 }));
-  },
-};
+  // Fallback
+  return withCors(request, new Response("Not found", { status: 404 }));
+}
+
+// Also export a default fetch for Workers that expect it.
+export default { fetch: handleApi };
