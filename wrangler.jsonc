@@ -8,8 +8,8 @@
 
   // IMPORTANT: scope the worker to /api/* on your zone
   "routes": [
-    { "pattern": "chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" },
-    { "pattern": "www.chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" }
+    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" },
+    { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
   ],
 
   // If you’re not using workers.dev access, you can omit this.
