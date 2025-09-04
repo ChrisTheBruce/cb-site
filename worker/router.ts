@@ -5,8 +5,10 @@ export interface Env {
   // Optional cookie name override used by handlers/email.ts
   DL_EMAIL_COOKIE_NAME?: string;
 
-  // You can add other env bindings here (KV, secrets, etc.) as needed.
-  // MAILCHANNELS_KEY?: string;
+  // Toggleable debug flag (stringy truthy: "1", "true", "yes", "on")
+  DEBUG_MODE?: string;
+
+  // MAILCHANNELS_KEY?: string; // etc
 }
 
 /* ------------ small helpers -------------- */
@@ -40,6 +42,11 @@ function withCors(req: Request, res: Response): Response {
 function handleOptions(req: Request): Response {
   // CORS preflight
   return new Response(null, { status: 204, headers: corsHeaders(req) });
+}
+
+function toBool(x: any): boolean {
+  const s = String(x ?? "").toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 /* --------- /api/download-notify (minimal) ---------- */
@@ -84,6 +91,15 @@ export default {
 
     // Other API routes
     const url = new URL(request.url);
+
+    // --- NEW: runtime debug config for the client (used by main.jsx) ---
+    if (request.method === "GET" && url.pathname === "/api/debug-config") {
+      const resp = json(
+        { debug: toBool(env.DEBUG_MODE) },
+        { headers: { "cache-control": "no-store" } }
+      );
+      return withCors(request, resp);
+    }
 
     if (request.method === "POST" && url.pathname === "/api/download-notify") {
       const res = await downloadNotifyHandler(request, env);
