@@ -2,7 +2,7 @@ import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
 import { bad } from "./lib/responses";
-import { isDebug } from './env'; 
+import { DBG, isDebug } from './env'; 
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -35,7 +35,8 @@ export default {
       if (isDebug(env)) {
       console.log('⚙️  Debug mode enabled by isDebug(env)');
       }
-       
+      DBG(env, "also from DBG function");
+
       // --- NEW: Stage 1 streaming stub (no OpenAI yet) ---
       // Intercept only POST /api/chat/stream and stream an echo of the last user message.
       if (request.method === "POST" && url.pathname === "/api/chat/stream") {
