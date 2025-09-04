@@ -2,12 +2,15 @@ import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
 import { bad } from "./lib/responses";
+import { getDebugMode } from './env';
+
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const ridStr = rid();
     const url = new URL(request.url);
-
+    const DEBUG = getDebugMode(env);
+    if (DEBUG) console.log('Debug mode is ON');
     try {
       // --- CORS preflight for API calls (existing behavior) ---
       if (request.method === "OPTIONS") {
