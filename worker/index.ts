@@ -8,16 +8,12 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const ridStr = rid();
     const url = new URL(request.url);
-    console.log("Hello from the index.ts Worker");
-    if (isDebug(env)) {
-      console.log("⚙️ Debug mode enabled 1 ");
-    }
-
+    
     console.log("DEBUG_MODE:", env.DEBUG_MODE);
     console.log("typeof DEBUG_MODE:", typeof env.DEBUG_MODE);
     
     if (env.DEBUG_MODE === "true") {
-      console.log("⚙️ Debug mode enabled ✅");
+      console.log("⚙️  Debug mode enabled ✅");
     } else {
       console.log("❌ Debug mode NOT enabled");
     }
@@ -35,9 +31,9 @@ export default {
           },
         });
       }
-      console.log("Hello from the Worker after");
+
       if (isDebug(env)) {
-      console.log('⚙️ Debug mode enabled 2');
+      console.log('⚙️  Debug mode enabled by isDebug(env)');
       }
        
       // --- NEW: Stage 1 streaming stub (no OpenAI yet) ---
