@@ -1,25 +1,25 @@
 {
+  // Wrangler config for the API Worker that handles /api/* only.
+  // This lets Cloudflare Pages serve the site, while this Worker serves APIs.
   "name": "cb-site",
-  "main": "worker/index.ts",            // if your fetch() is exported from worker/index.ts, change to "worker/index.ts"
-  "compatibility_date": "2025-09-01",
-  "tsconfig": "tsconfig.json",
+  "main": "worker/index.ts",
+  "compatibility_date": "2024-09-01",
+  "compatibility_flags": ["nodejs_compat"],
 
-  // Serve built frontend from Vite's output
-  "assets": {
-    "directory": "dist",
-    "binding": "ASSETS"
-  },
-
-  // Force this service to own your domain
+  // IMPORTANT: scope the worker to /api/* on your zone
   "routes": [
-    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
+    { "pattern": "chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" },
+    { "pattern": "www.chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" }
   ],
 
-  // Optional but handy
-  "observability": { "enabled": true },
+  // If you’re not using workers.dev access, you can omit this.
+  // Keeping it true makes it easy to hit the workers.dev URL for testing.
+  "workers_dev": true,
 
-  "vars": {
-    "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/",
-    "DEBUG_MODE": "true"   // 👈 Added env var here
-  }
+  // If you have bindings (KV/Queues/Secrets), keep them here.
+  // "kv_namespaces": [],
+  // "queues": { "producers": [], "consumers": [] },
+
+  // Optional: enable logs in dashboard (we still prefer `wrangler tail`)
+  "observability": { "enabled": true }
 }
