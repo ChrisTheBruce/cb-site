@@ -1,9 +1,11 @@
 // worker/router.ts
+import { DBG } from "./env";           // uses your existing logger (no env arg)
 import { emailRoutes } from "./handlers/email";
 
 export interface Env {
   DL_EMAIL_COOKIE_NAME?: string;
-  DEBUG_MODE?: string;
+  DEBUG_MODE?: string; // "1" | "true" | "yes" | "on"
+  // other bindings as needed
 }
 
 /* ------------ small helpers -------------- */
@@ -43,7 +45,11 @@ function toBool(x: any): boolean {
   return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
-/* ---------- cookie helpers (inline, no throws) ---------- */
+function ridOf(req: Request): string {
+  return req.headers.get("cf-ray") || "";
+}
+
+/* ---------- cookie helpers (inline) ---------- */
 function apexFromHost(hostname: string): string | null {
   if (!hostname || hostname === "localhost" || /^[0-9.]+$/.test(hostname)) return null;
   if (hostname.endsWith(".workers.dev")) return null;
@@ -54,40 +60,71 @@ function apexFromHost(hostname: string): string | null {
 }
 
 function expireCookie(name: string, domain?: string): string {
-  const bits = [`${name}=`, "Path=/", "SameSite=Lax", "Max-Age=0", "Expires=Thu, 01 Jan 1970 00:00:00 GMT", "Secure"];
+  const bits = [
+    `${name}=`,
+    "Path=/",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    "Secure",
+  ];
   if (domain) bits.splice(1, 0, `Domain=${domain}`);
   return bits.join("; ");
 }
 
 /* --------- /api/download-notify (minimal) ---------- */
+// mask email like "ab***@domain.com" for logs
+function maskEmail(e?: string): string | undefined {
+  if (!e || typeof e !== "string") return undefined;
+  const [user, dom] = e.split("@");
+  if (!dom) return e;
+  if ((user ?? "").length <= 2) return `${user?.[0] || "*"}***@${dom}`;
+  return `${user.slice(0, 2)}***@${dom}`;
+}
+
 async function downloadNotifyHandler(req: Request, _env: Env): Promise<Response> {
   let payload: any = {};
   try {
     if ((req.headers.get("content-type") || "").includes("application/json")) {
       payload = await req.json();
     }
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
+
   try {
     const { path, title, email, ts, ua } = payload || {};
-    console.log("notify: download", JSON.stringify({ path, title, email, ts, ua, reqId: req.headers.get("cf-ray") || null }));
-  } catch {}
+    DBG("hit /api/download-notify", JSON.stringify({
+      rid: ridOf(req),
+      path,
+      title,
+      email: maskEmail(email),
+      ts,
+      ua,
+    }));
+  } catch { /* ignore */ }
+
   return json({ ok: true }, { status: 200 });
 }
 
 /* --------------- main fetch router ---------------- */
 
-export async function handleApi(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+export async function handleApi(
+  request: Request,
+  env: Env,
+  _ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(request.url);
+  DBG("enter router", JSON.stringify({ rid: ridOf(request), method: request.method, path: url.pathname }));
+
   try {
     if (request.method === "OPTIONS") {
+      DBG("CORS preflight", JSON.stringify({ rid: ridOf(request) }));
       return handleOptions(request);
     }
 
-    const url = new URL(request.url);
-
     // ---- HARDENED: clear email route handled inline first ----
     if (request.method === "POST" && url.pathname === "/api/email/clear") {
+      DBG("hit /api/email/clear (inline)", JSON.stringify({ rid: ridOf(request) }));
+
       const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
       try {
         const host = url.hostname;
@@ -95,37 +132,48 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
         const name = env.DL_EMAIL_COOKIE_NAME || "dl_email";
         const allNames = [name, "DL_EMAIL", "cb_dl_email"];
 
+        DBG("clearing cookies", JSON.stringify({ rid: ridOf(request), host, apex, names: allNames }));
+
         for (const n of allNames) {
-          headers.append("Set-Cookie", expireCookie(n));              // host-scoped
+          headers.append("Set-Cookie", expireCookie(n));           // host-scoped
           if (apex) headers.append("Set-Cookie", expireCookie(n, apex)); // apex-scoped
         }
       } catch (e) {
-        // swallow – still return 200 to avoid client UX break
-        console.log("inline clear error", (e as any)?.message || e);
+        DBG("inline clear error", String((e as any)?.message || e));
       }
-      return withCors(request, new Response(JSON.stringify({ ok: true }), { status: 200, headers }));
+
+      return withCors(
+        request,
+        new Response(JSON.stringify({ ok: true }), { status: 200, headers })
+      );
     }
 
-    // Email routes (/api/email and friends)
+    // Email routes (/api/email, etc.)
     const emailRes = await emailRoutes(request, env);
-    if (emailRes) return withCors(request, emailRes);
+    if (emailRes) {
+      DBG("emailRoutes handled", JSON.stringify({ rid: ridOf(request), path: url.pathname }));
+      return withCors(request, emailRes);
+    }
 
     // Runtime debug config for the client (used by main.jsx)
     if (request.method === "GET" && url.pathname === "/api/debug-config") {
-      const resp = json({ debug: toBool(env.DEBUG_MODE) }, { headers: { "cache-control": "no-store" } });
+      const body = { debug: toBool(env.DEBUG_MODE) };
+      DBG("hit /api/debug-config", JSON.stringify({ rid: ridOf(request), body }));
+      const resp = json(body, { headers: { "cache-control": "no-store" } });
       return withCors(request, resp);
     }
 
+    // Download notify endpoint
     if (request.method === "POST" && url.pathname === "/api/download-notify") {
       const res = await downloadNotifyHandler(request, env);
       return withCors(request, res);
     }
 
+    DBG("fallback 404", JSON.stringify({ rid: ridOf(request), path: url.pathname }));
     return withCors(request, new Response("Not found", { status: 404 }));
   } catch (err: any) {
-    // Final safety net: never leak stack; add a ray id for correlation
-    const rid = request.headers.get("cf-ray") || crypto.randomUUID?.() || "no-ray";
-    console.log("router fatal", rid, err?.message || err);
+    const rid = ridOf(request) || (globalThis as any).crypto?.randomUUID?.() || "no-ray";
+    DBG("router fatal", JSON.stringify({ rid, err: err?.message || String(err) }));
     return withCors(
       request,
       json({ ok: false, error: "Internal error", rid }, { status: 500 })
