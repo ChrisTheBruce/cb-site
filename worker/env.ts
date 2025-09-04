@@ -6,6 +6,7 @@ export interface Env {
   DEBUG_MODE?: string;          // optional override, default used if missing 
 }
 
-export function isDebug(env: Env): boolean {
-  return env.DEBUG_MODE === 'true';
+export function isDebug(env: { DEBUG_MODE?: string }): boolean {
+  return env.DEBUG_MODE === "true";
 }
+

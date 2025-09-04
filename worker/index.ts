@@ -8,7 +8,10 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const ridStr = rid();
     const url = new URL(request.url);
-    const DEBUG_MODE = env.DEBUG_MODE === 'true';
+    console.log("Hello from the index.ts Worker");
+    if (isDebug(env)) {
+      console.log("⚙️ Debug mode enabled 1 ");
+    }
     try {
       // --- CORS preflight for API calls (existing behavior) ---
       if (request.method === "OPTIONS") {
@@ -22,9 +25,9 @@ export default {
           },
         });
       }
-      console.log("Hello from the Worker");
+      console.log("Hello from the Worker afte after");
       if (isDebug(env)) {
-      console.log('⚙️ Debug mode enabled');
+      console.log('⚙️ Debug mode enabled 2');
       }
        
       // --- NEW: Stage 1 streaming stub (no OpenAI yet) ---
