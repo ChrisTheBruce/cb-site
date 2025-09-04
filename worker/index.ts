@@ -12,6 +12,16 @@ export default {
     if (isDebug(env)) {
       console.log("⚙️ Debug mode enabled 1 ");
     }
+
+    console.log("DEBUG_MODE:", env.DEBUG_MODE);
+    console.log("typeof DEBUG_MODE:", typeof env.DEBUG_MODE);
+    
+    if (env.DEBUG_MODE === "true") {
+      console.log("⚙️ Debug mode enabled ✅");
+    } else {
+      console.log("❌ Debug mode NOT enabled");
+    }
+
     try {
       // --- CORS preflight for API calls (existing behavior) ---
       if (request.method === "OPTIONS") {
@@ -25,7 +35,7 @@ export default {
           },
         });
       }
-      console.log("Hello from the Worker afte after");
+      console.log("Hello from the Worker after");
       if (isDebug(env)) {
       console.log('⚙️ Debug mode enabled 2');
       }
