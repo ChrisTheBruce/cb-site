@@ -2,16 +2,13 @@ import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
 import { bad } from "./lib/responses";
-import { Env } from './env'; 
+import { isDebug } from './env'; 
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const ridStr = rid();
     const url = new URL(request.url);
     const DEBUG_MODE = env.DEBUG_MODE === 'true';
-    if (DEBUG_MODE) {
-      console.log('⚙️ Debug mode enabled');
-    }
     try {
       // --- CORS preflight for API calls (existing behavior) ---
       if (request.method === "OPTIONS") {
@@ -26,6 +23,10 @@ export default {
         });
       }
 
+      if (isDebug(env)) {
+      console.log('⚙️ Debug mode enabled');
+      }
+      
       // --- NEW: Stage 1 streaming stub (no OpenAI yet) ---
       // Intercept only POST /api/chat/stream and stream an echo of the last user message.
       if (request.method === "POST" && url.pathname === "/api/chat/stream") {

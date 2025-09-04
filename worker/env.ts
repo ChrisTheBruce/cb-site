@@ -5,3 +5,7 @@ export interface Env {
   SUPPORT_EMAIL?: string;       // optional override, default used if missing
   DEBUG_MODE?: string;          // optional override, default used if missing 
 }
+
+export function isDebug(env: Env): boolean {
+  return env.DEBUG_MODE === 'true';
+}
