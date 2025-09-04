@@ -18,7 +18,7 @@ export function DBG(env: { DEBUG_MODE?: unknown }, ...args: any[]): void {
 */
 export function DBG( ...args: any[]): void {
   if (isDebug(env)) {
-    console.log( ...args);
+    console.log( "🐛 ", ...args);
   }
 
 }
