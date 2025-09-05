@@ -22,7 +22,7 @@ function cors() {
     "Access-Control-Allow-Origin": "https://chrisbrighouse.com",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
-    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Credentials": "true"
   } as const;
 }
 
@@ -67,13 +67,13 @@ export class DownloadLog extends DurableObject {
   private requireBasicAuth(req: Request, env: Env): Response | null {
     const user = env.EXPORT_USER;
     const pass = env.EXPORT_PASS;
-    if (!user || !pass) return null; // open if creds not set
+    if (!user || !pass) return null; // open if not configured
 
     const hdr = req.headers.get("authorization") || "";
     if (!hdr.startsWith("Basic ")) {
       return new Response("Unauthorized", {
         status: 401,
-        headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any,
+        headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any
       });
     }
     try {
@@ -82,14 +82,15 @@ export class DownloadLog extends DurableObject {
     } catch {}
     return new Response("Unauthorized", {
       status: 401,
-      headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any,
+      headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any
     });
   }
 
   private parseRange(url: URL) {
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    const limit = Math.min(100000, Math.max(1, Number(url.searchParams.get("limit") || 5000)));
+    // Sanitize and clamp to a safe integer
+    const limit = Math.min(100000, Math.max(1, Number(url.searchParams.get("limit") || 5000) | 0));
     const where: string[] = [];
     const args: any[] = [];
 
@@ -150,18 +151,16 @@ export class DownloadLog extends DurableObject {
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
-      console.log("[🐛 DO] export.json query", { whereSql, args, limit });
+      // Inline LIMIT (do not bind with ?) to avoid driver issues
+      const sql = `SELECT id, ts, email, path, title, ua, ip, referer
+                   FROM downloads ${whereSql}
+                   ORDER BY ts DESC
+                   LIMIT ${limit}`;
+      console.log("[🐛 DO] export.json query", { sql, args });
 
       try {
-        const cursor = this.sql.exec(
-          `SELECT id, ts, email, path, title, ua, ip, referer
-           FROM downloads ${whereSql}
-           ORDER BY ts DESC
-           LIMIT ?`,
-          ...args, limit
-        );
-        // Cloudflare DO SQL API: materialize via toArray() (or cursor.raw().next()).
-        const rows = cursor.toArray() as Row[]; // docs show toArray usage
+        const cursor = this.sql.exec(sql, ...args);
+        const rows = cursor.toArray() as Row[];
         return json({ ok: true, count: rows.length, rows });
       } catch (err: any) {
         console.log("[🐛 DO] export.json error:", err?.message || String(err));
@@ -175,17 +174,15 @@ export class DownloadLog extends DurableObject {
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
-      console.log("[🐛 DO] export.csv query", { whereSql, args, limit });
+      const sql = `SELECT id, ts, email, path, title, ua, ip, referer
+                   FROM downloads ${whereSql}
+                   ORDER BY ts DESC
+                   LIMIT ${limit}`;
+      console.log("[🐛 DO] export.csv query", { sql, args });
 
       try {
-        const cursor = this.sql.exec(
-          `SELECT id, ts, email, path, title, ua, ip, referer
-           FROM downloads ${whereSql}
-           ORDER BY ts DESC
-           LIMIT ?`,
-          ...args, limit
-        );
-        const rows = cursor.toArray() as Row[]; // materialize
+        const cursor = this.sql.exec(sql, ...args);
+        const rows = cursor.toArray() as Row[];
 
         const header = ["id","ts","iso","email","path","title","ua","ip","referer"];
         const lines: string[] = [header.join(",")];

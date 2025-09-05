@@ -44,7 +44,6 @@ export default {
     console.log("[🐛 DBG][WK] incoming", { method, path: pathname });
 
     try {
-      // CORS preflight for /api/*
       if (method === "OPTIONS" && pathname.startsWith("/api/")) {
         return new Response(null, { headers: cors() });
       }
@@ -57,12 +56,12 @@ export default {
         return json({ ok: true, handler: "worker", now: new Date().toISOString() });
       }
 
-      // Clear cookie (both host-only and Domain= variants handled inside)
+      // Clear cookie
       if (method === "POST" && pathname === "/api/email/clear") {
         return clearDownloadEmailCookie();
       }
 
-      // OPTIONAL: Set cookie server-side (helps keep things consistent)
+      // Server-set cookie (optional, kept from earlier)
       if (method === "POST" && pathname === "/api/email/set") {
         let body: any = {};
         try { body = await request.json(); } catch {}
@@ -80,7 +79,6 @@ export default {
           "Secure",
           "SameSite=Lax",
         ].join("; ");
-
         const withDomain = [
           `download_email=${encodeURIComponent(email)}`,
           "Path=/",
@@ -100,7 +98,7 @@ export default {
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
       }
 
-      // ---- Durable Object stub (single global instance)
+      // Durable Object stub (single global instance)
       const id = env.DOWNLOAD_LOG.idFromName("global");
       const stub = env.DOWNLOAD_LOG.get(id);
 
@@ -123,21 +121,26 @@ export default {
 
       // Export JSON
       if (method === "GET" && pathname === "/api/downloads/export.json") {
-        console.log("[🐛 DBG][WK] forwarding to DO /export.json", { search });
-        return await forwardToDO(stub, "/export.json" + search, {
-          headers: { "Authorization": request.headers.get("authorization") || "" }
-        });
+        const auth = request.headers.get("authorization");
+        console.log("[🐛 DBG][WK] forwarding to DO /export.json", { search, hasAuth: !!auth });
+        return await forwardToDO(
+          stub,
+          "/export.json" + search,
+          { headers: auth ? { "Authorization": auth } : undefined }
+        );
       }
 
       // Export CSV
       if (method === "GET" && pathname === "/api/downloads/export.csv") {
-        console.log("[🐛 DBG][WK] forwarding to DO /export.csv", { search });
-        return await forwardToDO(stub, "/export.csv" + search, {
-          headers: { "Authorization": request.headers.get("authorization") || "" }
-        });
+        const auth = request.headers.get("authorization");
+        console.log("[🐛 DBG][WK] forwarding to DO /export.csv", { search, hasAuth: !!auth });
+        return await forwardToDO(
+          stub,
+          "/export.csv" + search,
+          { headers: auth ? { "Authorization": auth } : undefined }
+        );
       }
 
-      // 404
       return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
       console.error("[🐛 DBG][WK] error", err?.stack || err?.message || String(err));
@@ -145,7 +148,6 @@ export default {
     }
   }
 };
-
 
 
 
