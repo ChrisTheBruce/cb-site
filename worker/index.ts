@@ -1,6 +1,8 @@
 // /worker/index.ts
 import { clearDownloadEmailCookie } from "./handlers/email";
 
+export { DownloadLog } from './do/DownloadLog';
+
 type Env = {
   DOWNLOAD_LOG: DurableObjectNamespace;
   EXPORT_USER?: string;
