@@ -1,50 +1,67 @@
-import * as React from "react";
+// src/hooks/useDlEmail.ts
+import { useCallback, useMemo, useState } from "react";
 import {
+  readEmailCookie,
   setEmail as apiSetEmail,
   clearEmail as apiClearEmail,
-  readEmailCookie,
   notifyDownload,
-} from "@/services/downloads"; // <-- points to services, not components
+} from "@/services/downloads";
 
+/**
+ * Simple hook to manage the downloads-email lifecycle:
+ * - reads cookie on mount
+ * - exposes ensureEmail() to prompt user if missing
+ * - exposes setEmail/clearEmail wrappers
+ */
 export function useDlEmail() {
-  const [email, setEmailState] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [email, setEmailState] = useState<string | null>(() => readEmailCookie());
 
-  // hydrate from cookie on mount
-  React.useEffect(() => {
-    setEmailState(readEmailCookie());
-  }, []);
+  const setEmail = useCallback(
+    async (value: string) => {
+      await apiSetEmail(value);
+      setEmailState(value);
+      return { ok: true } as const;
+    },
+    [setEmailState]
+  );
 
-  const submitEmail = React.useCallback(async (value: string) => {
-    setBusy(true);
-    setError(null);
-    const resp = await apiSetEmail(value);
-    if ((resp as any).ok) {
-      setEmailState((resp as any).email || value);
-    } else {
-      setError((resp as any).error || "Email not accepted");
+  const clearEmail = useCallback(async () => {
+    await apiClearEmail();
+    setEmailState(null);
+    return { ok: true } as const;
+  }, [setEmailState]);
+
+  const ensureEmail = useCallback(async (): Promise<string | false> => {
+    let current = readEmailCookie();
+    if (current) {
+      setEmailState(current);
+      return current;
     }
-    setBusy(false);
-    return resp;
-  }, []);
+    // Minimal in-browser prompt. Replace with your modal if you have one.
+    const entered = typeof window !== "undefined" ? window.prompt("Please enter your email to continue:") : null;
+    if (!entered) return false;
 
-  const clear = React.useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    const resp = await apiClearEmail();
-    if ((resp as any).ok) {
-      setEmailState(null);
-    } else {
-      setError((resp as any).error || "Could not clear");
+    const trimmed = entered.trim();
+    // Very light validation
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+    if (!valid) {
+      alert("That doesn't look like a valid email address.");
+      return false;
     }
-    setBusy(false);
-    return resp;
-  }, []);
+    await setEmail(trimmed);
+    return trimmed;
+  }, [setEmail]);
 
-  const notify = React.useCallback(async (filePathOrUrl: string, title?: string) => {
-    return notifyDownload(filePathOrUrl, title);
-  }, []);
-
-  return { email, busy, error, submitEmail, clear, notify };
+  return useMemo(
+    () => ({
+      email,
+      setEmail,
+      clearEmail,
+      ensureEmail,
+      notifyDownload, // re-exported for convenience if needed
+    }),
+    [email, setEmail, clearEmail, ensureEmail]
+  );
 }
+
+export type UseDlEmail = ReturnType<typeof useDlEmail>;

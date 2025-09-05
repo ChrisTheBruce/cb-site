@@ -1,9 +1,19 @@
 // src/services/downloads.ts
+
+// ---- Configurable endpoints (override via Vite env if you like)
+const NOTIFY_ENDPOINT =
+  (import.meta as any)?.env?.VITE_DOWNLOAD_NOTIFY_ENDPOINT || "/api/download-notify";
+const EMAIL_SET_ENDPOINT =
+  (import.meta as any)?.env?.VITE_DOWNLOAD_EMAIL_SET_ENDPOINT || "/api/email/set";
+const EMAIL_CLEAR_ENDPOINT =
+  (import.meta as any)?.env?.VITE_DOWNLOAD_EMAIL_CLEAR_ENDPOINT || "/api/email/clear";
+
+// ---- Small helpers
 export async function postJson<T = any>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: body ? JSON.stringify(body) : null,
   });
   if (!res.ok) {
@@ -13,9 +23,89 @@ export async function postJson<T = any>(url: string, body?: unknown): Promise<T>
   return res.json() as Promise<T>;
 }
 
-export async function clearDownloadEmail(): Promise<{ ok: boolean }> {
-  // hits your Worker: POST /api/email/clear
-  return postJson<{ ok: boolean }>('/api/email/clear');
+export function readEmailCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)download_email=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function setCookieClient(name: string, value: string, days = 365) {
+  if (typeof document === "undefined") return;
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Expires=${expires}; SameSite=Lax`;
+}
+
+function clearCookieClient(name: string) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Path=/; Expires=${new Date(0).toUTCString()}; SameSite=Lax`;
+}
+
+// ---- Public API used by hooks/components
+
+/** Server-preferred: set the email cookie (falls back to client if server route missing). */
+export async function setEmail(email: string): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch(EMAIL_SET_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email }),
+    });
+    if (res.ok) return (await res.json()) as { ok: boolean };
+    // If the server route doesn't exist, fall back to client cookie
+    setCookieClient("download_email", email);
+    return { ok: true };
+  } catch {
+    setCookieClient("download_email", email);
+    return { ok: true };
+  }
+}
+
+/** Clears the email cookie on server (preferred) with safe client fallback. */
+export async function clearEmail(): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch(EMAIL_CLEAR_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    });
+    if (res.ok) return (await res.json()) as { ok: boolean };
+    clearCookieClient("download_email");
+    return { ok: true };
+  } catch {
+    clearCookieClient("download_email");
+    return { ok: true };
+  }
+}
+
+/** Fire-and-forget download notification (beacon -> keepalive). */
+export async function notifyDownload(payload: Record<string, unknown>): Promise<boolean> {
+  const body = JSON.stringify(payload);
+
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const ok = navigator.sendBeacon(
+        NOTIFY_ENDPOINT,
+        new Blob([body], { type: "application/json" })
+      );
+      if (ok) return true;
+    }
+  } catch {
+    // ignore, fall through to fetch
+  }
+
+  try {
+    await fetch(NOTIFY_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+      credentials: "include",
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 
