@@ -22,7 +22,7 @@ function cors() {
     "Access-Control-Allow-Origin": "https://chrisbrighouse.com",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
-    "Access-Control-Allow-Credentials": "true"
+    "Access-Control-Allow-Credentials": "true",
   } as const;
 }
 
@@ -46,7 +46,7 @@ export class DownloadLog extends DurableObject {
     super(ctx, env);
     this.sql = ctx.storage.sql;
 
-    // Initialise schema once per instance (idempotent).
+    // Idempotent schema
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS downloads (
         id      TEXT PRIMARY KEY,
@@ -67,13 +67,13 @@ export class DownloadLog extends DurableObject {
   private requireBasicAuth(req: Request, env: Env): Response | null {
     const user = env.EXPORT_USER;
     const pass = env.EXPORT_PASS;
-    if (!user || !pass) return null; // exports are open if creds not set
+    if (!user || !pass) return null; // open if creds not set
 
     const hdr = req.headers.get("authorization") || "";
     if (!hdr.startsWith("Basic ")) {
       return new Response("Unauthorized", {
         status: 401,
-        headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any
+        headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any,
       });
     }
     try {
@@ -82,7 +82,7 @@ export class DownloadLog extends DurableObject {
     } catch {}
     return new Response("Unauthorized", {
       status: 401,
-      headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any
+      headers: { ...cors(), "WWW-Authenticate": 'Basic realm="exports"' } as any,
     });
   }
 
@@ -153,18 +153,15 @@ export class DownloadLog extends DurableObject {
       console.log("[🐛 DO] export.json query", { whereSql, args, limit });
 
       try {
-        const cur = this.sql.exec(
+        const cursor = this.sql.exec(
           `SELECT id, ts, email, path, title, ua, ip, referer
            FROM downloads ${whereSql}
            ORDER BY ts DESC
            LIMIT ?`,
           ...args, limit
         );
-
-        // Avoid cursor.toArray() API assumptions — iterate explicitly.
-        const rows: Row[] = [];
-        for (const row of cur) rows.push(row as Row);
-
+        // Cloudflare DO SQL API: materialize via toArray() (or cursor.raw().next()).
+        const rows = cursor.toArray() as Row[]; // docs show toArray usage
         return json({ ok: true, count: rows.length, rows });
       } catch (err: any) {
         console.log("[🐛 DO] export.json error:", err?.message || String(err));
@@ -181,19 +178,19 @@ export class DownloadLog extends DurableObject {
       console.log("[🐛 DO] export.csv query", { whereSql, args, limit });
 
       try {
-        const cur = this.sql.exec(
+        const cursor = this.sql.exec(
           `SELECT id, ts, email, path, title, ua, ip, referer
            FROM downloads ${whereSql}
            ORDER BY ts DESC
            LIMIT ?`,
           ...args, limit
         );
+        const rows = cursor.toArray() as Row[]; // materialize
 
         const header = ["id","ts","iso","email","path","title","ua","ip","referer"];
         const lines: string[] = [header.join(",")];
 
-        for (const rAny of cur) {
-          const r = rAny as Row;
+        for (const r of rows) {
           const iso = new Date(Number(r.ts || 0)).toISOString();
           lines.push([
             csvEscape(r.id),
