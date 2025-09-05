@@ -1,7 +1,7 @@
 // worker/router.ts
 import type { Env } from './env';
 import { json } from './lib/responses';
-import { DBG } from './lib/debug'; // <- adjust path if DBG is elsewhere
+import { DBG } from './env'; // <- adjust path if DBG is elsewhere
 
 import * as Health from './handlers/health';
 import * as Auth from './handlers/auth';
