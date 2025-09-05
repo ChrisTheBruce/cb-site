@@ -2,6 +2,24 @@ import * as React from "react";
 import EmailBadge from "@/components/EmailBadge";
 import { useDlEmail } from "@/hooks/useDlEmail";
 
+
+export default function Downloads() {
+  const [email, setEmail] = useState<string | null>(() => {
+    // however you currently load it (cookie/context/localStorage)
+    const v = (document.cookie.match(/(?:^|;\s*)download_email=([^;]+)/)?.[1]) ?? null;
+    return v ? decodeURIComponent(v) : null;
+  });
+
+  const refreshEmail = () => setEmail(null); // cookie is cleared server-side, drop local state
+
+  return (
+    <>
+      <EmailBadge email={email} onCleared={refreshEmail} />
+      {/* …the rest of your downloads UI… */}
+    </>
+  );
+}
+
 /**
  * SAFE client-side debug logger (no Worker env import on the client).
  * Set window.__DEBUG__ = true in DevTools to see logs.
