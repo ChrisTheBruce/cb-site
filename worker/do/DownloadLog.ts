@@ -46,7 +46,7 @@ export class DownloadLog extends DurableObject {
     super(ctx, env);
     this.sql = ctx.storage.sql;
 
-    // Create table + indexes once per DO instance (idempotent).
+    // Initialise schema once per instance (idempotent).
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS downloads (
         id      TEXT PRIMARY KEY,
@@ -67,7 +67,7 @@ export class DownloadLog extends DurableObject {
   private requireBasicAuth(req: Request, env: Env): Response | null {
     const user = env.EXPORT_USER;
     const pass = env.EXPORT_PASS;
-    if (!user || !pass) return null; // open if not configured
+    if (!user || !pass) return null; // exports are open if creds not set
 
     const hdr = req.headers.get("authorization") || "";
     if (!hdr.startsWith("Basic ")) {
@@ -109,19 +109,15 @@ export class DownloadLog extends DurableObject {
     const url = new URL(req.url);
     const { pathname } = url;
 
-    // CORS preflight
+    // Preflight
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: cors() });
     }
 
-    // Append a new log record
+    // Append a log row
     if (req.method === "POST" && pathname === "/append") {
       let payload: any = null;
-      try {
-        payload = await req.json();
-      } catch {
-        return json({ ok: false, error: "invalid json" }, { status: 400 });
-      }
+      try { payload = await req.json(); } catch { return json({ ok: false, error: "invalid json" }, { status: 400 }); }
 
       const { path, title, email, ts, ua, ip, referer } = payload || {};
       if (!path || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
@@ -143,7 +139,8 @@ export class DownloadLog extends DurableObject {
         );
         return json({ ok: true, id });
       } catch (err: any) {
-        return json({ ok: false, error: "db insert failed", detail: String(err?.message || err) }, { status: 500 });
+        console.log("[🐛 DO] append error:", err?.message || String(err));
+        return json({ ok: false, error: "db insert failed" }, { status: 500 });
       }
     }
 
@@ -153,16 +150,26 @@ export class DownloadLog extends DurableObject {
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
-      const cursor = this.sql.exec(
-        `SELECT id, ts, email, path, title, ua, ip, referer
-         FROM downloads ${whereSql}
-         ORDER BY ts DESC
-         LIMIT ?`,
-        ...args, limit
-      );
+      console.log("[🐛 DO] export.json query", { whereSql, args, limit });
 
-      const rows: Row[] = cursor.toArray() as any;
-      return json({ ok: true, count: rows.length, rows });
+      try {
+        const cur = this.sql.exec(
+          `SELECT id, ts, email, path, title, ua, ip, referer
+           FROM downloads ${whereSql}
+           ORDER BY ts DESC
+           LIMIT ?`,
+          ...args, limit
+        );
+
+        // Avoid cursor.toArray() API assumptions — iterate explicitly.
+        const rows: Row[] = [];
+        for (const row of cur) rows.push(row as Row);
+
+        return json({ ok: true, count: rows.length, rows });
+      } catch (err: any) {
+        console.log("[🐛 DO] export.json error:", err?.message || String(err));
+        return json({ ok: false, error: "export failed" }, { status: 500 });
+      }
     }
 
     // CSV export
@@ -171,41 +178,47 @@ export class DownloadLog extends DurableObject {
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
-      const cursor = this.sql.exec(
-        `SELECT id, ts, email, path, title, ua, ip, referer
-         FROM downloads ${whereSql}
-         ORDER BY ts DESC
-         LIMIT ?`,
-        ...args, limit
-      );
+      console.log("[🐛 DO] export.csv query", { whereSql, args, limit });
 
-      const rows: Row[] = cursor.toArray() as any;
+      try {
+        const cur = this.sql.exec(
+          `SELECT id, ts, email, path, title, ua, ip, referer
+           FROM downloads ${whereSql}
+           ORDER BY ts DESC
+           LIMIT ?`,
+          ...args, limit
+        );
 
-      const header = ["id","ts","iso","email","path","title","ua","ip","referer"];
-      const lines: string[] = [header.join(",")];
+        const header = ["id","ts","iso","email","path","title","ua","ip","referer"];
+        const lines: string[] = [header.join(",")];
 
-      for (const r of rows) {
-        const iso = new Date(Number(r.ts || 0)).toISOString();
-        lines.push([
-          csvEscape(r.id),
-          csvEscape(r.ts),
-          csvEscape(iso),
-          csvEscape(r.email),
-          csvEscape(r.path),
-          csvEscape(r.title ?? ""),
-          csvEscape(r.ua ?? ""),
-          csvEscape(r.ip ?? ""),
-          csvEscape(r.referer ?? "")
-        ].join(","));
+        for (const rAny of cur) {
+          const r = rAny as Row;
+          const iso = new Date(Number(r.ts || 0)).toISOString();
+          lines.push([
+            csvEscape(r.id),
+            csvEscape(r.ts),
+            csvEscape(iso),
+            csvEscape(r.email),
+            csvEscape(r.path),
+            csvEscape(r.title ?? ""),
+            csvEscape(r.ua ?? ""),
+            csvEscape(r.ip ?? ""),
+            csvEscape(r.referer ?? "")
+          ].join(","));
+        }
+
+        const headers = new Headers({
+          ...cors(),
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="downloads_${new Date().toISOString().slice(0,10)}.csv"`
+        } as any);
+
+        return new Response(lines.join("\n"), { status: 200, headers });
+      } catch (err: any) {
+        console.log("[🐛 DO] export.csv error:", err?.message || String(err));
+        return json({ ok: false, error: "export failed" }, { status: 500 });
       }
-
-      const headers = new Headers({
-        ...cors(),
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="downloads_${new Date().toISOString().slice(0,10)}.csv"`
-      } as any);
-
-      return new Response(lines.join("\n"), { status: 200, headers });
     }
 
     return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });

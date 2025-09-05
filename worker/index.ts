@@ -1,8 +1,6 @@
 // /worker/index.ts
 import { clearDownloadEmailCookie } from "./handlers/email";
 
-export { DownloadLog } from './do/DownloadLog';
-
 type Env = {
   DOWNLOAD_LOG: DurableObjectNamespace;
   EXPORT_USER?: string;
@@ -26,6 +24,14 @@ function json(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
+async function forwardToDO(stub: DurableObjectStub, path: string, init?: RequestInit) {
+  const url = "https://do" + path;
+  const resp = await stub.fetch(url, init);
+  const outHeaders = new Headers(resp.headers);
+  Object.entries(cors()).forEach(([k, v]) => outHeaders.set(k, v));
+  return new Response(resp.body, { status: resp.status, headers: outHeaders });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -35,12 +41,11 @@ export default {
     console.log("[🐛 DBG][WK] incoming", { method, path: pathname });
 
     try {
-      // CORS preflight
       if (method === "OPTIONS" && pathname.startsWith("/api/")) {
         return new Response(null, { headers: cors() });
       }
 
-      // Diagnostics
+      // Diag
       if (method === "GET" && pathname === "/api/__whoami") {
         return json({ ok: true, stack: "worker", ts: Date.now() });
       }
@@ -48,18 +53,17 @@ export default {
         return json({ ok: true, handler: "worker", now: new Date().toISOString() });
       }
 
-      // Cookie clear stays as-is
+      // Clear cookie
       if (method === "POST" && pathname === "/api/email/clear") {
         return clearDownloadEmailCookie();
       }
 
-      // ---- Durable Object stub (single global instance)
+      // Single global DO instance
       const id = env.DOWNLOAD_LOG.idFromName("global");
       const stub = env.DOWNLOAD_LOG.get(id);
 
-      // Append log (frontend already calls this)
+      // Append log
       if (method === "POST" && pathname === "/api/download-notify") {
-        // Capture a few server-side fields and forward to DO
         let body: any = {};
         try { body = await request.json(); } catch {}
         body.ts = Number.isFinite(body.ts) ? body.ts : Date.now();
@@ -67,42 +71,30 @@ export default {
         body.ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "";
         body.referer = request.headers.get("referer") || "";
 
-        const resp = await stub.fetch("https://do/append", {
+        console.log("[🐛 DBG][WK] forwarding to DO /append", { email: body.email, path: body.path });
+        return await forwardToDO(stub, "/append", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body)
         });
-        // Add CORS to DO response
-        const hdrs = new Headers(resp.headers);
-        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
-        return new Response(resp.body, { status: resp.status, headers: hdrs });
       }
 
       // Export JSON
       if (method === "GET" && pathname === "/api/downloads/export.json") {
-        const resp = await stub.fetch("https://do/export.json" + search, {
-          headers: {
-            "Authorization": request.headers.get("authorization") || ""
-          }
+        console.log("[🐛 DBG][WK] forwarding to DO /export.json", { search });
+        return await forwardToDO(stub, "/export.json" + search, {
+          headers: { "Authorization": request.headers.get("authorization") || "" }
         });
-        const hdrs = new Headers(resp.headers);
-        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
-        return new Response(resp.body, { status: resp.status, headers: hdrs });
       }
 
       // Export CSV
       if (method === "GET" && pathname === "/api/downloads/export.csv") {
-        const resp = await stub.fetch("https://do/export.csv" + search, {
-          headers: {
-            "Authorization": request.headers.get("authorization") || ""
-          }
+        console.log("[🐛 DBG][WK] forwarding to DO /export.csv", { search });
+        return await forwardToDO(stub, "/export.csv" + search, {
+          headers: { "Authorization": request.headers.get("authorization") || "" }
         });
-        const hdrs = new Headers(resp.headers);
-        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
-        return new Response(resp.body, { status: resp.status, headers: hdrs });
       }
 
-      // 404
       return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
       console.error("[🐛 DBG][WK] error", err?.stack || err?.message || String(err));
