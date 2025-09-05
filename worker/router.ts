@@ -1,46 +1,72 @@
 // worker/router.ts
-import { json, notFound, methodNotAllowed } from './lib/responses';
-import { handleHealth } from './handlers/health';
-import { handleAuthLogin } from './handlers/auth';
-import { handleNotify } from './handlers/notify';
-import { handleChatStream } from './handlers/chat';
 import type { Env } from './env';
+import { json } from './lib/responses';
+import { DBG } from './lib/debug'; // <- adjust path if DBG is elsewhere
 
-// 👉 If your DBG utility lives elsewhere, update this import.
-import { DBG } from './env';
+import * as Health from './handlers/health';
+import * as Auth from './handlers/auth';
+import * as Notify from './handlers/notify';
+import * as Chat from './handlers/chat';
+
+// Local helpers (avoid dependency on notFound/methodNotAllowed in lib)
+function notFound(msg = 'Not found') {
+  return new Response(JSON.stringify({ ok: false, error: msg }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function methodNotAllowed(allow: string[]) {
+  return new Response(JSON.stringify({ ok: false, error: 'Method Not Allowed', allow }), {
+    status: 405,
+    headers: {
+      'Content-Type': 'application/json',
+      'Allow': allow.join(', '),
+    },
+  });
+}
+
+// Resolve handler function from namespace imports
+function pickHandler(ns: Record<string, any>, candidates: string[]) {
+  for (const name of candidates) {
+    const fn = ns?.[name];
+    if (typeof fn === 'function') return fn;
+  }
+  return undefined;
+}
+
+const handleHealth = pickHandler(Health, ['handleHealth', 'default']);
+const handleAuthLogin = pickHandler(Auth, ['handleAuthLogin', 'login', 'default']);
+const handleNotify = pickHandler(Notify, ['handleNotify', 'notify', 'default']);
+const handleChatStream = pickHandler(Chat, ['handleChatStream', 'handleChat', 'chat', 'default']);
 
 type Handler = (req: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
 
-// Central, explicit route table
-const routes: Record<string, Record<string, Handler>> = {
+const routes: Record<string, Record<string, Handler | undefined>> = {
   '/api/health':      { GET: handleHealth },
   '/api/auth/login':  { POST: handleAuthLogin },
   '/api/notify':      { POST: handleNotify },
   '/api/chat/stream': { POST: handleChatStream },
 };
 
-// Normalize URL path (strip trailing slash except root)
 function normPath(pathname: string) {
   if (pathname.length > 1 && pathname.endsWith('/')) return pathname.slice(0, -1);
   return pathname;
 }
 
-export async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+export async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = normPath(url.pathname);
   const method = request.method.toUpperCase();
 
-  // ── trace: entry ───────────────────────────────────────────────────────────────
   DBG('router:incoming', { method, path });
 
-  // Fast-exit: only handle /api/* here; let index.ts serve SPA/static for the rest
   if (!path.startsWith('/api/')) {
     DBG('router:nonApi', { path });
     return notFound('Not an API route');
   }
 
   const table = routes[path];
-
   if (!table) {
     DBG('router:noRoute', { method, path });
     return notFound(`No route for ${path}`);
@@ -67,7 +93,6 @@ export async function route(request: Request, env: Env, ctx: ExecutionContext): 
 
     return res;
   } catch (err: any) {
-    // Centralized error guard: never leak internals
     DBG('router:error', {
       method,
       path,
