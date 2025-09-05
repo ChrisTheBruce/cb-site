@@ -1,3 +1,32 @@
+// /worker/index.ts
+import { router, corsHeaders } from './router';
+
+export default {
+  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    console.log('[🐛 DBG][WK] incoming', { method: request.method, path: url.pathname });
+
+    try {
+      const res = await router.handle(request, env, ctx);
+      if (res) return res;
+
+      // safety 404
+      return new Response(JSON.stringify({ ok: false, error: `No route for ${url.pathname}` }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    } catch (err: any) {
+      console.error('[🐛 DBG][WK] error', err?.stack || err?.message || String(err));
+      return new Response(JSON.stringify({ ok: false, error: 'Internal error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+  },
+};
+
+
+/*
 import type { Env } from "./router";
 import { handleApi } from "./router";
 import { rid, log } from "./lib/ids";
@@ -110,3 +139,4 @@ export default {
   },
 };
 
+*/

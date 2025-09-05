@@ -1,3 +1,30 @@
+// /worker/handlers/email.ts
+import { corsHeaders } from '../router';
+
+export async function clearCookie(): Promise<Response> {
+  const expires = new Date(0).toUTCString();
+  const setCookie = [
+    'download_email=',
+    'Path=/',
+    `Expires=${expires}`,
+    'Max-Age=0',
+    'HttpOnly',
+    'Secure',
+    'SameSite=Lax',
+    // Keep Domain= if you need cross-apex (e.g., apex + www). Remove if unsure.
+    'Domain=chrisbrighouse.com',
+  ].join('; ');
+
+  console.log('[🐛 DBG][WK] matched /api/email/clear → clearing cookie');
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, 'Set-Cookie': setCookie },
+  });
+}
+
+
+/*
 // worker/handlers/email.ts
 // Handles:
 //   POST /api/email         -> set dl_email cookie
@@ -170,3 +197,4 @@ export async function emailRoutes(request: Request, env?: Env): Promise<Response
     return null;
   }
 }
+*/

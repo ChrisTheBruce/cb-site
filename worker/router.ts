@@ -1,3 +1,41 @@
+// /worker/router.ts
+import { Router } from 'itty-router';
+
+// ---- CORS (adjust origin(s) if needed)
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Credentials': 'true',
+  'X-App-Handler': 'worker',
+};
+
+const json = (body: unknown, init: ResponseInit = {}) =>
+  new Response(JSON.stringify(body), {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers || {}) },
+  });
+
+export const router = Router();
+
+// ---- Diagnostics
+router.get('/api/__whoami', () =>
+  json({ ok: true, stack: 'worker', ts: Date.now() }, { status: 200 })
+);
+
+// ---- CORS preflight (allow all under /api/*)
+router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
+
+// ---- Email routes
+import * as email from './handlers/email';
+router.post('/api/email/clear', email.clearCookie);
+
+// ---- 404 fallback
+router.all('*', (req: Request) => {
+  const p = new URL(req.url).pathname;
+  return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
+});
+/*
 // worker/router.ts
 import type { Env } from './env';
 import { json } from './lib/responses';
@@ -102,3 +140,4 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
     return json({ ok: false, error: 'Internal error' }, { status: 500 });
   }
 }
+*/
