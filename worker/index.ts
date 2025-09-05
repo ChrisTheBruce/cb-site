@@ -28,6 +28,15 @@ function json(body: unknown, init: ResponseInit = {}) {
 async function forwardToDO(stub: DurableObjectStub, path: string, init?: RequestInit) {
   const url = "https://do" + path;
   const resp = await stub.fetch(url, init);
+  // Pull debug headers and print them so they show up in the Worker tail
+  const dbg = {
+    status: resp.status,
+    doLog: resp.headers.get("X-DO-Log") || undefined,
+    doCount: resp.headers.get("X-DO-Count") || undefined,
+    doSql: resp.headers.get("X-DO-Sql") || undefined,
+  };
+  console.log("[🐛 DO->WK]", path, dbg);
+
   const outHeaders = new Headers(resp.headers);
   Object.entries(cors()).forEach(([k, v]) => outHeaders.set(k, v));
   return new Response(resp.body, { status: resp.status, headers: outHeaders });
@@ -61,7 +70,7 @@ export default {
         return clearDownloadEmailCookie();
       }
 
-      // Server-set cookie (optional, kept from earlier)
+      // Server-set cookie (optional)
       if (method === "POST" && pathname === "/api/email/set") {
         let body: any = {};
         try { body = await request.json(); } catch {}
@@ -148,7 +157,6 @@ export default {
     }
   }
 };
-
 
 
 /*

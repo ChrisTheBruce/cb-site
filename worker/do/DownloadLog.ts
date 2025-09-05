@@ -39,6 +39,10 @@ function csvEscape(s: any): string {
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
+function shorten(s: string, n = 180) {
+  return s.length <= n ? s : s.slice(0, n) + "…";
+}
+
 export class DownloadLog extends DurableObject {
   private sql: SqlStorage;
   private env: Env;
@@ -46,7 +50,7 @@ export class DownloadLog extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.env = env; // <-- capture env for later use
+    this.env = env;
 
     // Idempotent schema
     this.sql.exec(`
@@ -91,7 +95,6 @@ export class DownloadLog extends DurableObject {
   private parseRange(url: URL) {
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    // clamp & coerce to safe integer
     const limit = Math.min(100000, Math.max(1, Number(url.searchParams.get("limit") || 5000) | 0));
     const where: string[] = [];
     const args: any[] = [];
@@ -108,7 +111,6 @@ export class DownloadLog extends DurableObject {
     return { whereSql, args, limit };
   }
 
-  // NOTE: fetch gets only (req). env is available via this.env
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
@@ -141,10 +143,14 @@ export class DownloadLog extends DurableObject {
           ip || null,
           referer || null
         );
-        return json({ ok: true, id });
+
+        // Add debug header the Worker can print
+        return json({ ok: true, id }, { headers: { "X-DO-Log": `append ok id=${id}` } });
       } catch (err: any) {
-        console.log("[🐛 DO] append error:", err?.message || String(err));
-        return json({ ok: false, error: "db insert failed" }, { status: 500 });
+        return json({ ok: false, error: "db insert failed" }, {
+          status: 500,
+          headers: { "X-DO-Log": `append error ${String(err?.message || err)}` }
+        });
       }
     }
 
@@ -158,15 +164,19 @@ export class DownloadLog extends DurableObject {
                    FROM downloads ${whereSql}
                    ORDER BY ts DESC
                    LIMIT ${limit}`;
-      console.log("[🐛 DO] export.json query", { sql, args });
 
       try {
         const cursor = this.sql.exec(sql, ...args);
         const rows = cursor.toArray() as Row[];
-        return json({ ok: true, count: rows.length, rows });
+        return json(
+          { ok: true, count: rows.length, rows },
+          { headers: { "X-DO-Count": String(rows.length), "X-DO-Sql": shorten(sql) } }
+        );
       } catch (err: any) {
-        console.log("[🐛 DO] export.json error:", err?.message || String(err));
-        return json({ ok: false, error: "export failed" }, { status: 500 });
+        return json(
+          { ok: false, error: "export failed" },
+          { status: 500, headers: { "X-DO-Log": `export.json error ${String(err?.message || err)}`, "X-DO-Sql": shorten(sql) } }
+        );
       }
     }
 
@@ -180,7 +190,6 @@ export class DownloadLog extends DurableObject {
                    FROM downloads ${whereSql}
                    ORDER BY ts DESC
                    LIMIT ${limit}`;
-      console.log("[🐛 DO] export.csv query", { sql, args });
 
       try {
         const cursor = this.sql.exec(sql, ...args);
@@ -209,11 +218,15 @@ export class DownloadLog extends DurableObject {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="downloads_${new Date().toISOString().slice(0,10)}.csv"`
         } as any);
+        headers.set("X-DO-Count", String(rows.length));
+        headers.set("X-DO-Sql", shorten(sql));
 
         return new Response(lines.join("\n"), { status: 200, headers });
       } catch (err: any) {
-        console.log("[🐛 DO] export.csv error:", err?.message || String(err));
-        return json({ ok: false, error: "export failed" }, { status: 500 });
+        return json(
+          { ok: false, error: "export failed" },
+          { status: 500, headers: { "X-DO-Log": `export.csv error ${String(err?.message || err)}`, "X-DO-Sql": shorten(sql) } }
+        );
       }
     }
 
