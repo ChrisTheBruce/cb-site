@@ -37,13 +37,6 @@ export function setDBGEnv(env: Env): void {
 }
 
 /** Simple debug logger that does NOT reference `env`. */
-export function DBG(msg: string, meta?: unknown): void {
-  console.log(`[🐛DBG] in DBG function`);
-  if (!_debugEnabled) return;
-  // Keep the format compact but structured for tail/JSON grep
-  if (meta !== undefined) {
-    console.log(`[🐛DBG] ${msg}`, meta);
-  } else {
-    console.log(`[🐛DBG] ${msg}`);
-  }
+export function DBG(...args): void {
+  console.log(`[🐛 DBG]`, ...args);
 }
