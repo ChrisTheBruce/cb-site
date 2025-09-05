@@ -1,4 +1,56 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cb-site",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+
+
+  // Serve built frontend from Vite's output
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS"
+  },
+
+  "routes": [
+    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" },
+    { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
+  ],
+
+  // Optional but handy
+  "observability": { "enabled": true },
+
+  "vars": {
+      "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/",
+      "DEBUG_MODE": "true",
+      "SUPPORT_TO": "support@chrisbrighouse.com",
+      "MAILCHANNELS_FROM": "noreply@chrisbrighouse.com"
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "DOWNLOAD_LOG", "class_name": "DownloadLog" }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1-do-downloadlog",
+      "new_sqlite_classes": ["DownloadLog"]
+    }
+  ]
+
+  "env": {
+    "preview": {
+      "vars": { "DEBUG_MODE": "true" }
+    },
+    "production": {
+      "vars": { "DEBUG_MODE": "true" }
+    }
+  }
+}
+
+/*
+{
   "name": "cb-site",
   "main": "worker/index.ts",            // if your fetch() is exported from worker/index.ts, change to "worker/index.ts"
   "compatibility_date": "2025-09-01",
@@ -38,3 +90,4 @@
   }
 
   }
+*/

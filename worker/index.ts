@@ -1,64 +1,112 @@
 // /worker/index.ts
-import { clearDownloadEmailCookie } from './handlers/email';
-import { handleDownloadNotify } from './handlers/notify';
+import { clearDownloadEmailCookie } from "./handlers/email";
 
-function corsHeaders() {
+type Env = {
+  DOWNLOAD_LOG: DurableObjectNamespace;
+  EXPORT_USER?: string;
+  EXPORT_PASS?: string;
+};
+
+function cors() {
   return {
-    'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Credentials': 'true',
-    'X-App-Handler': 'worker',
+    "Access-Control-Allow-Origin": "https://chrisbrighouse.com",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Credentials": "true",
+    "X-App-Handler": "worker"
   } as const;
 }
 
 function json(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers || {});
-  headers.set('Content-Type', 'application/json');
-  const c = corsHeaders();
-  Object.entries(c).forEach(([k, v]) => headers.set(k, v));
+  headers.set("Content-Type", "application/json");
+  Object.entries(cors()).forEach(([k, v]) => headers.set(k, v));
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
 export default {
-  async fetch(request: Request, env: any): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const { pathname } = url;
+    const { pathname, search } = url;
     const method = request.method.toUpperCase();
 
-    console.log('[🐛 DBG][WK] incoming', { method, path: pathname });
+    console.log("[🐛 DBG][WK] incoming", { method, path: pathname });
 
     try {
-      // CORS preflight for all /api/*
-      if (method === 'OPTIONS' && pathname.startsWith('/api/')) {
-        return new Response(null, { headers: corsHeaders() });
+      // CORS preflight
+      if (method === "OPTIONS" && pathname.startsWith("/api/")) {
+        return new Response(null, { headers: cors() });
       }
 
       // Diagnostics
-      if (method === 'GET' && pathname === '/api/__whoami') {
-        return json({ ok: true, stack: 'worker', ts: Date.now() });
+      if (method === "GET" && pathname === "/api/__whoami") {
+        return json({ ok: true, stack: "worker", ts: Date.now() });
       }
-      if (method === 'GET' && pathname === '/api/debug-config') {
-        return json({ ok: true, handler: 'worker', now: new Date().toISOString() });
+      if (method === "GET" && pathname === "/api/debug-config") {
+        return json({ ok: true, handler: "worker", now: new Date().toISOString() });
       }
 
-      // Clear cookie
-      if (method === 'POST' && pathname === '/api/email/clear') {
+      // Cookie clear stays as-is
+      if (method === "POST" && pathname === "/api/email/clear") {
         return clearDownloadEmailCookie();
       }
 
-      // Download notify (email send + extra debug)
-      if (method === 'POST' && pathname === '/api/download-notify') {
-        return handleDownloadNotify(request, env);
+      // ---- Durable Object stub (single global instance)
+      const id = env.DOWNLOAD_LOG.idFromName("global");
+      const stub = env.DOWNLOAD_LOG.get(id);
+
+      // Append log (frontend already calls this)
+      if (method === "POST" && pathname === "/api/download-notify") {
+        // Capture a few server-side fields and forward to DO
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        body.ts = Number.isFinite(body.ts) ? body.ts : Date.now();
+        body.ua = body.ua || request.headers.get("user-agent") || "";
+        body.ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "";
+        body.referer = request.headers.get("referer") || "";
+
+        const resp = await stub.fetch("https://do/append", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        // Add CORS to DO response
+        const hdrs = new Headers(resp.headers);
+        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
+        return new Response(resp.body, { status: resp.status, headers: hdrs });
       }
 
-      // 404 fallback
+      // Export JSON
+      if (method === "GET" && pathname === "/api/downloads/export.json") {
+        const resp = await stub.fetch("https://do/export.json" + search, {
+          headers: {
+            "Authorization": request.headers.get("authorization") || ""
+          }
+        });
+        const hdrs = new Headers(resp.headers);
+        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
+        return new Response(resp.body, { status: resp.status, headers: hdrs });
+      }
+
+      // Export CSV
+      if (method === "GET" && pathname === "/api/downloads/export.csv") {
+        const resp = await stub.fetch("https://do/export.csv" + search, {
+          headers: {
+            "Authorization": request.headers.get("authorization") || ""
+          }
+        });
+        const hdrs = new Headers(resp.headers);
+        Object.entries(cors()).forEach(([k, v]) => hdrs.set(k, v));
+        return new Response(resp.body, { status: resp.status, headers: hdrs });
+      }
+
+      // 404
       return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
-      console.error('[🐛 DBG][WK] error', err?.stack || err?.message || String(err));
-      return json({ ok: false, error: 'Internal error' }, { status: 500 });
+      console.error("[🐛 DBG][WK] error", err?.stack || err?.message || String(err));
+      return json({ ok: false, error: "Internal error" }, { status: 500 });
     }
-  },
+  }
 };
 
 
