@@ -1,24 +1,5 @@
 import * as React from "react";
-import EmailBadge from "@/components/EmailBadge";
 import { useDlEmail } from "@/hooks/useDlEmail";
-
-
-export default function Downloads() {
-  const [email, setEmail] = useState<string | null>(() => {
-    // however you currently load it (cookie/context/localStorage)
-    const v = (document.cookie.match(/(?:^|;\s*)download_email=([^;]+)/)?.[1]) ?? null;
-    return v ? decodeURIComponent(v) : null;
-  });
-
-  const refreshEmail = () => setEmail(null); // cookie is cleared server-side, drop local state
-
-  return (
-    <>
-      <EmailBadge email={email} onCleared={refreshEmail} />
-      {/* …the rest of your downloads UI… */}
-    </>
-  );
-}
 
 /**
  * SAFE client-side debug logger (no Worker env import on the client).
@@ -59,6 +40,21 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
  */
 const NOTIFY_ENDPOINT =
   (import.meta as any)?.env?.VITE_DOWNLOAD_NOTIFY_ENDPOINT || "/api/download-notify";
+
+// Small helper: POST JSON
+async function postJson<T = any>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: body ? JSON.stringify(body) : null,
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new Error(`POST ${url} failed: ${res.status} ${msg}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 type DownloadItem = {
   title: string;
@@ -121,7 +117,25 @@ export default function Downloads() {
     ensureEmail?: () => Promise<string | false>;
   };
 
-  const email = dl?.email ?? null;
+  // Mirror hook email in local UI state so we can blank it immediately after clear.
+  const [emailUI, setEmailUI] = React.useState<string | null>(dl?.email ?? null);
+
+  // Keep local state in sync if hook updates (e.g., after entering email)
+  React.useEffect(() => {
+    setEmailUI(dl?.email ?? null);
+  }, [dl?.email]);
+
+  async function handleClearEmail() {
+    try {
+      await postJson<{ ok: boolean }>("/api/email/clear");
+      // Cookie cleared server-side; reflect immediately in the UI
+      setEmailUI(null);
+      DBG("download_email cookie cleared");
+    } catch (e) {
+      console.error("Failed to clear download email", e);
+      alert("Sorry, failed to clear the saved email.");
+    }
+  }
 
   async function onClickDownload(path: string, title?: string) {
     try {
@@ -157,18 +171,30 @@ export default function Downloads() {
   return (
     <section className="py-12 sm:py-16">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-        {/* Centered email above the title */}
-        <div className="mb-6 flex justify-center">
-          <EmailBadge email={email ?? undefined} />
-        </div>
+        {/* Centered email + clear button above the title */}
+        {emailUI && (
+          <div className="mb-6 flex items-center justify-center gap-3 text-sm text-gray-700">
+            <span>
+              Signed in for downloads: <strong>{emailUI}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={handleClearEmail}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1 hover:bg-gray-100"
+              title="Clear saved email"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
             Downloads
           </h1>
           <p className="mt-2 text-gray-600">
-            Click to download. We’ll send a short notification to our system so we
-            can support you better.
+            Click to download. We’ll prompt for your email once, then send a brief
+            notification so we can support you better.
           </p>
         </div>
 
