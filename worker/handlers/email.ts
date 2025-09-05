@@ -107,7 +107,7 @@ async function readJSON(req: Request): Promise<any> {
   return {};
 }
 
-/* ---------- SET EMAIL ---------- */
+// ---------- SET EMAIL ---------- 
 export async function setEmailHandler(req: Request, env?: Env): Promise<Response> {
   try {
     const name = (env && env.DL_EMAIL_COOKIE_NAME) || DEFAULT_COOKIE_NAME;
@@ -147,7 +147,7 @@ export async function setEmailHandler(req: Request, env?: Env): Promise<Response
   }
 }
 
-/* ---------- CLEAR EMAIL ---------- */
+// ---------- CLEAR EMAIL ---------- 
 export async function clearEmailHandler(req: Request, env?: Env): Promise<Response> {
   try {
     const name = (env && env.DL_EMAIL_COOKIE_NAME) || DEFAULT_COOKIE_NAME;
@@ -182,7 +182,7 @@ export async function clearEmailHandler(req: Request, env?: Env): Promise<Respon
   }
 }
 
-/* ---------- ROUTER ---------- */
+// ---------- ROUTER ---------- 
 export async function emailRoutes(request: Request, env?: Env): Promise<Response | null> {
   try {
     const url = new URL(request.url);
