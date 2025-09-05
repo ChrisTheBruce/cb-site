@@ -1,5 +1,6 @@
 // /worker/index.ts
 import { clearDownloadEmailCookie } from './handlers/email';
+import { handleDownloadNotify } from './handlers/notify';
 
 function corsHeaders() {
   return {
@@ -20,7 +21,7 @@ function json(body: unknown, init: ResponseInit = {}) {
 }
 
 export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: any): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
@@ -28,34 +29,30 @@ export default {
     console.log('[🐛 DBG][WK] incoming', { method, path: pathname });
 
     try {
-      // --- CORS preflight for all /api/* ---
+      // CORS preflight for all /api/*
       if (method === 'OPTIONS' && pathname.startsWith('/api/')) {
         return new Response(null, { headers: corsHeaders() });
       }
 
-      // --- Diagnostics: whoami ---
+      // Diagnostics
       if (method === 'GET' && pathname === '/api/__whoami') {
         return json({ ok: true, stack: 'worker', ts: Date.now() });
       }
-
-      // --- Diagnostics: debug-config (always returns promptly) ---
       if (method === 'GET' && pathname === '/api/debug-config') {
-        // Keep this lightweight to avoid hangs.
-        return json({
-          ok: true,
-          handler: 'worker',
-          now: new Date().toISOString(),
-          // You can add a couple of env flags if you want:
-          // debug: !!env?.DEBUG_MODE, // only if you have it defined
-        });
+        return json({ ok: true, handler: 'worker', now: new Date().toISOString() });
       }
 
-      // --- Clear download email cookie ---
+      // Clear cookie
       if (method === 'POST' && pathname === '/api/email/clear') {
         return clearDownloadEmailCookie();
       }
 
-      // --- 404 fallback (explicit, non-hanging) ---
+      // Download notify (email send + extra debug)
+      if (method === 'POST' && pathname === '/api/download-notify') {
+        return handleDownloadNotify(request, env);
+      }
+
+      // 404 fallback
       return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
       console.error('[🐛 DBG][WK] error', err?.stack || err?.message || String(err));
@@ -63,6 +60,7 @@ export default {
     }
   },
 };
+
 
 
 

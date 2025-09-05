@@ -1,79 +1,97 @@
-import type { Env } from "../env";
-import { json, bad } from "../lib/responses";
-import { isAllowedMethod, requireOrigin, EMAIL_RE } from "../lib/security";
-import { parseCookies } from "../lib/cookies";
-import { rateLimit } from "../lib/rateLimit";
-import { sendSupportEmail } from "../lib/mail";
+// /worker/handlers/notify.ts
+type Env = {
+  SUPPORT_TO?: string;          // e.g., "support@chrisbrighouse.com"
+  MAILCHANNELS_FROM?: string;   // e.g., "noreply@chrisbrighouse.com"
+};
 
-const ALLOW_RE: RegExp[] = [
-  /^\/downloads\//i,
-  /^\/assets\/downloads\//i,
-  /^\/assets\//i,
-  /^\/files\//i,
-  /^\/static\//i,
-];
-
-function pathAllowed(pathname: string) {
-  return ALLOW_RE.some(rx => rx.test(pathname));
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
+    'X-App-Handler': 'worker',
+  } as const;
 }
 
-function coerceFilePath(urlStr: string, base: string) {
-  try {
-    const u = new URL(urlStr, base);
-    let p = u.pathname;
-    if (!p.startsWith("/")) p = "/" + p;
-    return p;
-  } catch {
-    return "";
-  }
+function json(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set('Content-Type', 'application/json');
+  const c = corsHeaders();
+  Object.entries(c).forEach(([k, v]) => headers.set(k, v));
+  return new Response(JSON.stringify(body), { ...init, headers });
 }
 
-export async function handleDownloadNotify(request: Request, env: Env, rid: string) {
-  if (!isAllowedMethod(request, ["POST"])) return bad(405, "Method not allowed", rid);
-  if (!requireOrigin(request)) return bad(403, "Forbidden (origin)", rid);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
-  const ua = request.headers.get("user-agent") || "";
-  const base = new URL(request.url).origin;
-
-  const rate = await rateLimit(request, `dlnotify:${ip}`, 20, 60);
-  if (!rate.ok) return bad(429, `Too many requests. Retry after ${rate.reset}`, rid);
-
-  const body = await request.json().catch(() => ({} as any));
-  const candidate = body.filePath || body.path || body.url || body.href || "";
-  const title = body.title || body.name || "";
-
-  if (!candidate || typeof candidate !== "string") {
-    return bad(400, "Missing filePath/path/url in body", rid, { receivedKeys: Object.keys(body || {}) });
+export async function handleDownloadNotify(req: Request, env: Env): Promise<Response> {
+  let payload: any = null;
+  try {
+    payload = await req.json();
+  } catch (e) {
+    console.log('[🐛 DBG][WK notify] invalid JSON', String(e));
+    return json({ ok: false, error: 'invalid json' }, { status: 400 });
   }
 
-  const pathname = coerceFilePath(candidate, base);
-  if (!pathname) return bad(400, "Invalid file path or URL", rid, { candidate });
-  if (!pathAllowed(pathname)) return bad(400, "Disallowed file path (adjust allowlist)", rid, { pathname });
+  const { path, title, email, ts, ua } = payload || {};
+  console.log('[🐛 DBG][WK notify] payload', { path, title, email, ts, ua });
 
-  const cookies = parseCookies(request);
-  const dlEmail = cookies["dl_email"] ? decodeURIComponent(cookies["dl_email"]) : "";
-  if (!dlEmail || !EMAIL_RE.test(dlEmail)) return bad(401, "Missing or invalid dl_email cookie", rid);
+  // Basic validation
+  if (!path || !email || !EMAIL_RE.test(String(email))) {
+    console.log('[🐛 DBG][WK notify] validation failed', { path, email });
+    return json({ ok: false, error: 'missing/invalid path or email' }, { status: 400 });
+  }
 
-  const nowISO = new Date().toISOString();
-  const subject = `Download: ${title || pathname}`;
-  const bodyText = [
-    `A file was downloaded.`,
-    `Time: ${nowISO}`,
-    `User email: ${dlEmail}`,
-    `File: ${pathname}`,
-    title ? `Title: ${title}` : null,
-    `IP: ${ip}`,
-    `UA: ${ua}`,
-    `RID: ${rid}`,
-  ].filter(Boolean).join("\n");
+  // Build the message
+  const to = env.SUPPORT_TO || 'support@chrisbrighouse.com';
+  const from = env.MAILCHANNELS_FROM || 'noreply@chrisbrighouse.com';
 
-  // Soft-fail so downloads never break:
+  const subject = `Download: ${title || path} by ${email}`;
+  const text =
+`A download was requested.
+
+File:    ${title || path}
+Path:    ${path}
+Email:   ${email}
+Time:    ${ts ? new Date(ts).toISOString() : new Date().toISOString()}
+UA:      ${ua || 'n/a'}
+`;
+
+  // Attempt MailChannels send
+  const mcUrl = 'https://api.mailchannels.net/tx/v1/send';
+  const mcReq = {
+    personalizations: [{ to: [{ email: to }] }],
+    from: { email: from, name: 'Downloads' },
+    subject,
+    content: [
+      { type: 'text/plain', value: text },
+    ],
+  };
+
+  console.log('[🐛 DBG][WK notify] sending via MailChannels', { to, from, subject });
+
+  let status = 0;
+  let body = '';
   try {
-    await sendSupportEmail(env, subject, bodyText);
-    return json({ ok: true, rid, rate });
+    const res = await fetch(mcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mcReq),
+      // Abort after ~8s to avoid hangs
+      signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined,
+    });
+    status = res.status;
+    body = await res.text();
+    console.log('[🐛 DBG][WK notify] MailChannels response', { status, body: body.slice(0, 300) });
   } catch (err: any) {
-    console.error(JSON.stringify({ level: "error", rid, msg: "Mail send failed", error: err?.message || String(err) }));
-    return json({ ok: true, rid, rate, warn: "mail_notify_failed" });
+    console.log('[🐛 DBG][WK notify] MailChannels fetch error', err?.message || String(err));
+    return json({ ok: false, error: 'mail send failed (fetch error)' }, { status: 502 });
+  }
+
+  if (status >= 200 && status < 300) {
+    return json({ ok: true, sent: true });
+  } else {
+    // Return ok=false but include response details for debugging
+    return json({ ok: false, sent: false, status, body: body.slice(0, 500) }, { status: 502 });
   }
 }
