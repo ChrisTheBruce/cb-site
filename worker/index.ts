@@ -1,5 +1,6 @@
 // /worker/index.ts
 import { clearDownloadEmailCookie } from "./handlers/email";
+export { DownloadLog } from "./do/DownloadLog";
 
 type Env = {
   DOWNLOAD_LOG: DurableObjectNamespace;
@@ -32,6 +33,8 @@ async function forwardToDO(stub: DurableObjectStub, path: string, init?: Request
   return new Response(resp.body, { status: resp.status, headers: outHeaders });
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -41,11 +44,12 @@ export default {
     console.log("[🐛 DBG][WK] incoming", { method, path: pathname });
 
     try {
+      // CORS preflight for /api/*
       if (method === "OPTIONS" && pathname.startsWith("/api/")) {
         return new Response(null, { headers: cors() });
       }
 
-      // Diag
+      // Diagnostics
       if (method === "GET" && pathname === "/api/__whoami") {
         return json({ ok: true, stack: "worker", ts: Date.now() });
       }
@@ -53,16 +57,54 @@ export default {
         return json({ ok: true, handler: "worker", now: new Date().toISOString() });
       }
 
-      // Clear cookie
+      // Clear cookie (both host-only and Domain= variants handled inside)
       if (method === "POST" && pathname === "/api/email/clear") {
         return clearDownloadEmailCookie();
       }
 
-      // Single global DO instance
+      // OPTIONAL: Set cookie server-side (helps keep things consistent)
+      if (method === "POST" && pathname === "/api/email/set") {
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        const email = String(body?.email || "");
+        if (!EMAIL_RE.test(email)) {
+          return json({ ok: false, error: "invalid email" }, { status: 400 });
+        }
+
+        const oneYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+        const hostOnly = [
+          `download_email=${encodeURIComponent(email)}`,
+          "Path=/",
+          `Expires=${oneYear}`,
+          "HttpOnly",
+          "Secure",
+          "SameSite=Lax",
+        ].join("; ");
+
+        const withDomain = [
+          `download_email=${encodeURIComponent(email)}`,
+          "Path=/",
+          `Expires=${oneYear}`,
+          "HttpOnly",
+          "Secure",
+          "SameSite=Lax",
+          "Domain=chrisbrighouse.com",
+        ].join("; ");
+
+        const headers = new Headers(cors());
+        headers.set("Content-Type", "application/json");
+        headers.append("Set-Cookie", hostOnly);
+        headers.append("Set-Cookie", withDomain);
+
+        console.log("[🐛 DBG][WK] set /api/email/set → cookie set (both variants)");
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+      }
+
+      // ---- Durable Object stub (single global instance)
       const id = env.DOWNLOAD_LOG.idFromName("global");
       const stub = env.DOWNLOAD_LOG.get(id);
 
-      // Append log
+      // Append a download log
       if (method === "POST" && pathname === "/api/download-notify") {
         let body: any = {};
         try { body = await request.json(); } catch {}
@@ -95,6 +137,7 @@ export default {
         });
       }
 
+      // 404
       return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
       console.error("[🐛 DBG][WK] error", err?.stack || err?.message || String(err));
