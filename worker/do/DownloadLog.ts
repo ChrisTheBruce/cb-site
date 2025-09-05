@@ -40,11 +40,13 @@ function csvEscape(s: any): string {
 }
 
 export class DownloadLog extends DurableObject {
-  sql: SqlStorage;
+  private sql: SqlStorage;
+  private env: Env;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
+    this.env = env; // <-- capture env for later use
 
     // Idempotent schema
     this.sql.exec(`
@@ -64,10 +66,10 @@ export class DownloadLog extends DurableObject {
     `);
   }
 
-  private requireBasicAuth(req: Request, env: Env): Response | null {
-    const user = env.EXPORT_USER;
-    const pass = env.EXPORT_PASS;
-    if (!user || !pass) return null; // open if not configured
+  private requireBasicAuth(req: Request): Response | null {
+    const user = this.env.EXPORT_USER;
+    const pass = this.env.EXPORT_PASS;
+    if (!user || !pass) return null; // exports open if creds not set
 
     const hdr = req.headers.get("authorization") || "";
     if (!hdr.startsWith("Basic ")) {
@@ -89,7 +91,7 @@ export class DownloadLog extends DurableObject {
   private parseRange(url: URL) {
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
-    // Sanitize and clamp to a safe integer
+    // clamp & coerce to safe integer
     const limit = Math.min(100000, Math.max(1, Number(url.searchParams.get("limit") || 5000) | 0));
     const where: string[] = [];
     const args: any[] = [];
@@ -106,7 +108,8 @@ export class DownloadLog extends DurableObject {
     return { whereSql, args, limit };
   }
 
-  async fetch(req: Request, env: Env): Promise<Response> {
+  // NOTE: fetch gets only (req). env is available via this.env
+  async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
 
@@ -147,11 +150,10 @@ export class DownloadLog extends DurableObject {
 
     // JSON export
     if (req.method === "GET" && pathname === "/export.json") {
-      const unauthorized = this.requireBasicAuth(req, env);
+      const unauthorized = this.requireBasicAuth(req);
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
-      // Inline LIMIT (do not bind with ?) to avoid driver issues
       const sql = `SELECT id, ts, email, path, title, ua, ip, referer
                    FROM downloads ${whereSql}
                    ORDER BY ts DESC
@@ -170,7 +172,7 @@ export class DownloadLog extends DurableObject {
 
     // CSV export
     if (req.method === "GET" && pathname === "/export.csv") {
-      const unauthorized = this.requireBasicAuth(req, env);
+      const unauthorized = this.requireBasicAuth(req);
       if (unauthorized) return unauthorized;
 
       const { whereSql, args, limit } = this.parseRange(url);
