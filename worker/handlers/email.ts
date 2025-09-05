@@ -1,7 +1,5 @@
 // /worker/handlers/email.ts
-import { corsHeaders } from '../router';
-
-export async function clearCookie(): Promise<Response> {
+export function clearDownloadEmailCookie(): Response {
   const expires = new Date(0).toUTCString();
   const setCookie = [
     'download_email=',
@@ -11,7 +9,7 @@ export async function clearCookie(): Promise<Response> {
     'HttpOnly',
     'Secure',
     'SameSite=Lax',
-    // Keep Domain= if you need cross-apex (e.g., apex + www). Remove if unsure.
+    // Keep Domain= if you need consistency across apex + www; remove if unsure.
     'Domain=chrisbrighouse.com',
   ].join('; ');
 
@@ -19,7 +17,15 @@ export async function clearCookie(): Promise<Response> {
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, 'Set-Cookie': setCookie },
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Credentials': 'true',
+      'X-App-Handler': 'worker',
+      'Set-Cookie': setCookie,
+    },
   });
 }
 

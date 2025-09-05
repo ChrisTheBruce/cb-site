@@ -1,29 +1,69 @@
 // /worker/index.ts
-import { router, corsHeaders } from './router';
+import { clearDownloadEmailCookie } from './handlers/email';
+
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
+    'X-App-Handler': 'worker',
+  } as const;
+}
+
+function json(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set('Content-Type', 'application/json');
+  const c = corsHeaders();
+  Object.entries(c).forEach(([k, v]) => headers.set(k, v));
+  return new Response(JSON.stringify(body), { ...init, headers });
+}
 
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    console.log('[🐛 DBG][WK] incoming', { method: request.method, path: url.pathname });
+    const { pathname } = url;
+    const method = request.method.toUpperCase();
+
+    console.log('[🐛 DBG][WK] incoming', { method, path: pathname });
 
     try {
-      const res = await router.handle(request, env, ctx);
-      if (res) return res;
+      // --- CORS preflight for all /api/* ---
+      if (method === 'OPTIONS' && pathname.startsWith('/api/')) {
+        return new Response(null, { headers: corsHeaders() });
+      }
 
-      // safety 404
-      return new Response(JSON.stringify({ ok: false, error: `No route for ${url.pathname}` }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+      // --- Diagnostics: whoami ---
+      if (method === 'GET' && pathname === '/api/__whoami') {
+        return json({ ok: true, stack: 'worker', ts: Date.now() });
+      }
+
+      // --- Diagnostics: debug-config (always returns promptly) ---
+      if (method === 'GET' && pathname === '/api/debug-config') {
+        // Keep this lightweight to avoid hangs.
+        return json({
+          ok: true,
+          handler: 'worker',
+          now: new Date().toISOString(),
+          // You can add a couple of env flags if you want:
+          // debug: !!env?.DEBUG_MODE, // only if you have it defined
+        });
+      }
+
+      // --- Clear download email cookie ---
+      if (method === 'POST' && pathname === '/api/email/clear') {
+        return clearDownloadEmailCookie();
+      }
+
+      // --- 404 fallback (explicit, non-hanging) ---
+      return json({ ok: false, error: `No route for ${pathname}` }, { status: 404 });
     } catch (err: any) {
       console.error('[🐛 DBG][WK] error', err?.stack || err?.message || String(err));
-      return new Response(JSON.stringify({ ok: false, error: 'Internal error' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+      return json({ ok: false, error: 'Internal error' }, { status: 500 });
     }
   },
 };
+
 
 
 /*
