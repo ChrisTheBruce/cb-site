@@ -1,27 +1,5 @@
 {
   "name": "cb-site",
-  "main": "index.ts",
-  "compatibility_date": "2024-09-01",
-
-  "vars": {
-    "DEBUG_MODE": "true"
-  },
-
-  "env": {
-    "preview": {
-      "vars": { "DEBUG_MODE": "true" }
-    },
-    "production": {
-      "vars": { "DEBUG_MODE": "false" }
-    }
-  }
-}
-
-
-==
-
-{
-  "name": "cb-site",
   "main": "worker/index.ts",            // if your fetch() is exported from worker/index.ts, change to "worker/index.ts"
   "compatibility_date": "2025-09-01",
   "tsconfig": "tsconfig.json",
@@ -52,7 +30,7 @@
       "vars": { "DEBUG_MODE": "true" }
     },
     "production": {
-      "vars": { "DEBUG_MODE": "false" }
+      "vars": { "DEBUG_MODE": "true" }
     }
   }
 
