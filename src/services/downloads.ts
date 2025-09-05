@@ -1,6 +1,5 @@
 // src/services/downloads.ts
 
-// ---- Configurable endpoints (override via Vite env if you like)
 const NOTIFY_ENDPOINT =
   (import.meta as any)?.env?.VITE_DOWNLOAD_NOTIFY_ENDPOINT || "/api/download-notify";
 const EMAIL_SET_ENDPOINT =
@@ -8,7 +7,6 @@ const EMAIL_SET_ENDPOINT =
 const EMAIL_CLEAR_ENDPOINT =
   (import.meta as any)?.env?.VITE_DOWNLOAD_EMAIL_CLEAR_ENDPOINT || "/api/email/clear";
 
-// ---- Small helpers
 export async function postJson<T = any>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
@@ -37,10 +35,9 @@ function setCookieClient(name: string, value: string, days = 365) {
 
 function clearCookieClient(name: string) {
   if (typeof document === "undefined") return;
+  // host-only clear
   document.cookie = `${name}=; Path=/; Expires=${new Date(0).toUTCString()}; SameSite=Lax`;
 }
-
-// ---- Public API used by hooks/components
 
 /** Server-preferred: set the email cookie (falls back to client if server route missing). */
 export async function setEmail(email: string): Promise<{ ok: boolean }> {
@@ -52,7 +49,6 @@ export async function setEmail(email: string): Promise<{ ok: boolean }> {
       body: JSON.stringify({ email }),
     });
     if (res.ok) return (await res.json()) as { ok: boolean };
-    // If the server route doesn't exist, fall back to client cookie
     setCookieClient("download_email", email);
     return { ok: true };
   } catch {
@@ -61,24 +57,21 @@ export async function setEmail(email: string): Promise<{ ok: boolean }> {
   }
 }
 
-/** Clears the email cookie on server (preferred) with safe client fallback. */
+/** Clear server cookie(s) and ALWAYS clear the client copy too. */
 export async function clearEmail(): Promise<{ ok: boolean }> {
   try {
-    const res = await fetch(EMAIL_CLEAR_ENDPOINT, {
+    await fetch(EMAIL_CLEAR_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
     });
-    if (res.ok) return (await res.json()) as { ok: boolean };
-    clearCookieClient("download_email");
-    return { ok: true };
   } catch {
-    clearCookieClient("download_email");
-    return { ok: true };
+    // ignore network errors - we still clear locally below
   }
+  clearCookieClient("download_email");
+  return { ok: true };
 }
 
-/** Fire-and-forget download notification (beacon -> keepalive). */
 export async function notifyDownload(payload: Record<string, unknown>): Promise<boolean> {
   const body = JSON.stringify(payload);
 
@@ -90,9 +83,7 @@ export async function notifyDownload(payload: Record<string, unknown>): Promise<
       );
       if (ok) return true;
     }
-  } catch {
-    // ignore, fall through to fetch
-  }
+  } catch {}
 
   try {
     await fetch(NOTIFY_ENDPOINT, {

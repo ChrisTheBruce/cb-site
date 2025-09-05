@@ -1,7 +1,23 @@
 // /worker/handlers/email.ts
+
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
+    'X-App-Handler': 'worker',
+  } as const;
+}
+
+/**
+ * Clear download_email cookie using BOTH host-only and Domain= variants.
+ * This guarantees removal no matter how it was originally set.
+ */
 export function clearDownloadEmailCookie(): Response {
   const expires = new Date(0).toUTCString();
-  const setCookie = [
+
+  const hostOnly = [
     'download_email=',
     'Path=/',
     `Expires=${expires}`,
@@ -9,25 +25,31 @@ export function clearDownloadEmailCookie(): Response {
     'HttpOnly',
     'Secure',
     'SameSite=Lax',
-    // Keep Domain= if you need consistency across apex + www; remove if unsure.
+  ].join('; ');
+
+  const withDomain = [
+    'download_email=',
+    'Path=/',
+    `Expires=${expires}`,
+    'Max-Age=0',
+    'HttpOnly',
+    'Secure',
+    'SameSite=Lax',
     'Domain=chrisbrighouse.com',
   ].join('; ');
 
-  console.log('[🐛 DBG][WK] matched /api/email/clear → clearing cookie');
+  console.log('[🐛 DBG][WK] matched /api/email/clear → clearing cookie (both variants)');
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true',
-      'X-App-Handler': 'worker',
-      'Set-Cookie': setCookie,
-    },
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    ...corsHeaders(),
   });
+  headers.append('Set-Cookie', hostOnly);
+  headers.append('Set-Cookie', withDomain);
+
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
 }
+
 
 
 /*
