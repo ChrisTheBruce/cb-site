@@ -37,7 +37,7 @@
       "tag": "v1-do-downloadlog",
       "new_sqlite_classes": ["DownloadLog"]
     }
-  ]
+  ],
 
   "env": {
     "preview": {
