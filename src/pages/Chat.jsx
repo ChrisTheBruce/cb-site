@@ -1,86 +1,49 @@
-import React, { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useChat } from "@/hooks/useChat";
+import React, { useEffect } from "react";
+import { useAuth } from "../hooks/useAuth";
 
 export default function Chat() {
-  // Gate: require auth (keeps consistent with login gating)
-  const { isAuthenticated, loading } = useAuth();
-  const { model, setModel, messages, send, cancel, clear, streaming } = useChat("gpt-4o");
-  const [input, setInput] = useState("");
+  const { user, loading, error, refresh } = useAuth();
 
-  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (!isAuthenticated) return <div style={{ padding: 16 }}>You must sign in to use Chat.</div>;
+  // Optional: if you land here after a login redirect and want to be extra sure:
+  useEffect(() => {
+    // If we somehow arrive with no user but not loading, try one refresh.
+    if (!loading && !user) {
+      void refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
+        Loading your session…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-xl p-4 text-red-600">
+        There was a problem loading your session. Please refresh the page.
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-xl p-6 text-center">
+        <h2 className="text-xl font-semibold mb-2">You must sign in to use Chat.</h2>
+        <p className="opacity-80">Your sign-in succeeded, but your session isn’t visible to the app yet. Try refreshing the page.</p>
+      </div>
+    );
+  }
+
+  // ===== Your existing chat UI below =====
   return (
-    <div style={{ maxWidth: 860, margin: "1.5rem auto", padding: "0 1rem" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 14 }}>Model</span>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-          </select>
-        </label>
-        {streaming ? (
-          <button onClick={cancel}>Stop</button>
-        ) : (
-          <button onClick={clear}>Clear</button>
-        )}
-      </div>
-
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: 12,
-          background: "#fff",
-          minHeight: 280,
-          marginBottom: 12,
-        }}
-      >
-        {messages
-          .filter((m) => m.role !== "system")
-          .map((m, i) => (
-            <div
-              key={i}
-              style={{
-                whiteSpace: "pre-wrap",
-                padding: "8px 10px",
-                borderRadius: 6,
-                margin: "6px 0",
-                background: m.role === "user" ? "#f6f6f6" : "transparent",
-                border: m.role === "user" ? "1px solid #eee" : "none",
-              }}
-            >
-              <strong style={{ color: "#666" }}>
-                {m.role === "user" ? "You" : "Assistant"}
-              </strong>
-              <div>{m.content}</div>
-            </div>
-          ))}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const t = input;
-          setInput("");
-          send(t);
-        }}
-        style={{ display: "flex", gap: 8 }}
-      >
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message…"
-          rows={3}
-          style={{ flex: 1, padding: 8 }}
-          disabled={streaming}
-        />
-        <button type="submit" disabled={streaming || !input.trim()}>
-          Send
-        </button>
-      </form>
+    <div className="mx-auto max-w-3xl p-4">
+      {/* Replace this block with your current chat component(s). */}
+      <h1 className="text-2xl font-bold mb-4">Chat</h1>
+      {/* <ChatComposer /> etc. */}
     </div>
   );
 }

@@ -1,172 +1,89 @@
-// src/hooks/useAuth.ts
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 
-export type AuthUser = { name: string } | null;
+type User = {
+  id: string;
+  email: string;
+  name?: string | null;
+  [k: string]: unknown;
+};
 
-type MeResponse =
-  | { ok: true; user: { name: string } }
-  | { ok: false };
-
-type AuthContextShape = {
-  user: AuthUser;
-  isAuthenticated: boolean;
+type AuthContextValue = {
+  user: User | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  logout: () => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextShape | null>(null);
+const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ---------- utilities ----------
-async function getMe(): Promise<MeResponse> {
-  // canonical
-  const r1 = await fetch("/api/auth/me", {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (r1.ok) return (await r1.json()) as MeResponse;
-  if (r1.status === 401) return { ok: false };
-
-  // legacy fallback
-  const r2 = await fetch("/api/me", {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (r2.ok) return (await r2.json()) as MeResponse;
-  if (r2.status === 401) return { ok: false };
-
-  console.warn("Auth: /api/auth/me and /api/me both failed", r1.status, r2.status);
-  return { ok: false };
-}
-
-async function postLogout(): Promise<boolean> {
-  const r1 = await fetch("/api/auth/logout", {
-    method: "POST",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (r1.ok) return true;
-
-  const r2 = await fetch("/api/logout", {
-    method: "POST",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  return r2.ok;
-}
-
-// ---------- Provider ----------
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchMe = async (signal?: AbortSignal) => {
     try {
-      const me = await getMe();
-      if (me && (me as any).ok && (me as any).user) {
-        setUser((me as any).user);
-      } else {
+      setError(null);
+      // IMPORTANT: include credentials so cookies flow
+      const res = await fetch("/api/auth/me", {
+        method: "GET",
+        credentials: "include",
+        headers: { "Accept": "application/json" },
+        signal
+      });
+      if (!res.ok) {
+        // not authenticated is fine; just null user
         setUser(null);
+        return;
       }
+      const data = await res.json();
+      setUser(data?.user ?? null);
     } catch (e: any) {
-      setError(e?.message || "Failed to check session");
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await postLogout();
-    } finally {
+      if (e?.name !== "AbortError") setError("Failed to load session");
       setUser(null);
     }
-  }, []);
+  };
 
   useEffect(() => {
-    // Initial session check
-    refresh();
-  }, [refresh]);
+    const ctrl = new AbortController();
+    (async () => {
+      setLoading(true);
+      await fetchMe(ctrl.signal);
+      setLoading(false);
+    })();
+    return () => ctrl.abort();
+  }, []);
 
-  const value = useMemo<AuthContextShape>(
-    () => ({
-      user,
-      isAuthenticated: !!user,
-      loading,
-      error,
-      refresh,
-      logout,
-    }),
-    [user, loading, error, refresh, logout]
+  const refresh = async () => {
+    setLoading(true);
+    await fetchMe();
+    setLoading(false);
+  };
+
+  const signOut = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include"
+      });
+    } catch {
+      // ignore
+    } finally {
+      setUser(null);
+    }
+  };
+
+  const value = useMemo(
+    () => ({ user, loading, error, refresh, signOut }),
+    [user, loading, error]
   );
 
-  // No JSX in .ts files: use createElement
-  return React.createElement(AuthContext.Provider, { value }, children);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ---------- Hook ----------
-export function useAuth(): AuthContextShape {
+export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (ctx) return ctx;
-
-  // Defensive fallback if no <AuthProvider> is mounted
-  const [user, setUser] = useState<AuthUser>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const me = await getMe();
-      if (me && (me as any).ok && (me as any).user) {
-        setUser((me as any).user);
-      } else {
-        setUser(null);
-      }
-    } catch (e: any) {
-      setError(e?.message || "Failed to check session");
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await postLogout();
-    } finally {
-      setUser(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return {
-    user,
-    isAuthenticated: !!user,
-    loading,
-    error,
-    refresh,
-    logout,
-  };
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  return ctx;
 }
-
-// Keep default export too, in case some files import default.
-export default useAuth;
