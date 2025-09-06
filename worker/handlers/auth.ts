@@ -13,18 +13,37 @@ type Ctx = {
 const COOKIE_NAME = "cb_session";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
-function setCookieHeader(name: string, value: string, maxAgeSec: number) {
+// Figure out a safe cookie Domain so apex + www share the session in prod.
+// For local/dev/preview hosts, we omit Domain so the cookie stays host-scoped (works in dev).
+function cookieDomainFor(req: Request): string | null {
+  const host = new URL(req.url).hostname.toLowerCase();
+
+  // Production domains you actually use
+  if (host === "chrisbrighouse.com" || host === "www.chrisbrighouse.com") {
+    return ".chrisbrighouse.com";
+  }
+  // If you later add subdomains like app.chrisbrighouse.com, this still works:
+  if (host.endsWith(".chrisbrighouse.com")) {
+    return ".chrisbrighouse.com";
+  }
+
+  // Workers dev/preview, localhost, etc. → keep host-only to avoid cross-site cookie issues.
+  return null;
+}
+
+function setCookieHeader(name: string, value: string, maxAgeSec: number, domain: string | null) {
   const attrs = [
     `Path=/`,
     `HttpOnly`,
     `SameSite=Lax`,
     `Secure`,
     `Max-Age=${maxAgeSec}`,
-  ].join("; ");
-  return `${name}=${value}; ${attrs}`;
+  ];
+  if (domain) attrs.push(`Domain=${domain}`);
+  return `${name}=${value}; ${attrs.join("; ")}`;
 }
 
-function clearCookieHeader(name: string) {
+function clearCookieHeader(name: string, domain: string | null) {
   const attrs = [
     `Path=/`,
     `HttpOnly`,
@@ -32,8 +51,9 @@ function clearCookieHeader(name: string) {
     `Secure`,
     `Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
     `Max-Age=0`,
-  ].join("; ");
-  return `${name}=; ${attrs}`;
+  ];
+  if (domain) attrs.push(`Domain=${domain}`);
+  return `${name}=; ${attrs.join("; ")}`;
 }
 
 function getCookie(req: Request, name: string) {
@@ -76,20 +96,20 @@ export async function login({ req }: Ctx): Promise<Response> {
       return json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
-    // ✅ Simple, robust session value (no HMAC to avoid subtle crypto issues)
+    // Simple, robust session value (no HMAC to avoid subtle crypto issues)
     const session = `s:${crypto.randomUUID()}.${Date.now()}`;
 
+    const domain = cookieDomainFor(req);
     return json(
       { ok: true, user: { name: "chris" } },
       {
         status: 200,
         headers: {
-          "Set-Cookie": setCookieHeader(COOKIE_NAME, encodeURIComponent(session), COOKIE_MAX_AGE),
+          "Set-Cookie": setCookieHeader(COOKIE_NAME, encodeURIComponent(session), COOKIE_MAX_AGE, domain),
         },
       }
     );
-  } catch (err) {
-    // Defensive: never let an exception bubble up as a 500 without JSON
+  } catch {
     return json({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
@@ -109,12 +129,13 @@ export async function me({ req }: Ctx): Promise<Response> {
 export async function logout({ req }: Ctx): Promise<Response> {
   try {
     if (req.method !== "POST") return json({ ok: false, error: "Method Not Allowed" }, { status: 405 });
+    const domain = cookieDomainFor(req);
     return json(
       { ok: true },
       {
         status: 200,
         headers: {
-          "Set-Cookie": clearCookieHeader(COOKIE_NAME),
+          "Set-Cookie": clearCookieHeader(COOKIE_NAME, domain),
         },
       }
     );
