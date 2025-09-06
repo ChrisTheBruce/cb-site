@@ -1,7 +1,7 @@
-// /worker/router.ts
+// worker/router.ts
 import { Router } from 'itty-router';
 
-// ---- CORS (adjust origin(s) if needed)
+// ---- CORS (unchanged)
 export const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
@@ -32,22 +32,34 @@ import * as email from './handlers/email';
 router.post('/api/email/clear', email.clearCookie);
 
 // ---- Auth routes (NEW)
+// We normalize the path to be resilient to trailing slashes and variant proxies.
 import * as auth from './handlers/auth';
 
-// POST /api/auth/login   -> sets signed session cookie
-router.post('/api/auth/login', (request: Request, env: any) =>
-  auth.login({ req: request, env })
-);
+// Helper to normalize pathname (strip a single trailing slash, but keep root "/")
+function normPath(req: Request) {
+  const p = new URL(req.url).pathname;
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
+}
 
-// GET /api/auth/me       -> returns { ok:true, user:{...} } if logged in
-router.get('/api/auth/me', (request: Request, env: any) =>
-  auth.me({ req: request, env })
-);
+// Accept both with and without trailing slash
+router.post('/api/auth/login', (request: Request, env: any) => auth.login({ req: request, env }));
+router.post('/api/auth/login/*', (request: Request, env: any) => {
+  // fallback for trailing slash variants e.g. /api/auth/login/
+  if (normPath(request) === '/api/auth/login') return auth.login({ req: request, env });
+  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
+});
 
-// POST /api/auth/logout  -> clears session cookie
-router.post('/api/auth/logout', (request: Request, env: any) =>
-  auth.logout({ req: request, env })
-);
+router.get('/api/auth/me', (request: Request, env: any) => auth.me({ req: request, env }));
+router.get('/api/auth/me/*', (request: Request, env: any) => {
+  if (normPath(request) === '/api/auth/me') return auth.me({ req: request, env });
+  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
+});
+
+router.post('/api/auth/logout', (request: Request, env: any) => auth.logout({ req: request, env }));
+router.post('/api/auth/logout/*', (request: Request, env: any) => {
+  if (normPath(request) === '/api/auth/logout') return auth.logout({ req: request, env });
+  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
+});
 
 // ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
