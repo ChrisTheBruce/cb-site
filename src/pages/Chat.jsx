@@ -39,6 +39,7 @@ export default function Chat() {
   }
 
   // ===== Your existing chat UI below =====
+  
    // Chat state
   const [messages, setMessages] = useState([
     { role: "system", content: "You are a helpful assistant." },
@@ -86,7 +87,7 @@ export default function Chat() {
       setWorking(false);
     }
   }
-  
+
     return (
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
       <h1 style={{ marginBottom: 12 }}>Chat</h1>
