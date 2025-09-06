@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
   }), [user, loading, error, refresh, logout]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return React.createElement(AuthContext.Provider, { value }, children);
 }
 
 // ---------- Hook (default export) ----------
