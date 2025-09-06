@@ -39,6 +39,54 @@ export default function Chat() {
   }
 
   // ===== Your existing chat UI below =====
+   // Chat state
+  const [messages, setMessages] = useState([
+    { role: "system", content: "You are a helpful assistant." },
+  ]);
+  const [input, setInput] = useState("");
+  const [working, setWorking] = useState(false);
+
+  // Streaming helpers
+  const draftRef = useRef("");
+  const endRef = useRef(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // While we don't know auth state yet, render nothing (or a spinner)
+  if (loading) return null;
+  // Not signed in? Go to login.
+  if (!user) return <Navigate to="/login" replace />;
+
+  async function onSend(e) {
+    e.preventDefault();
+    const content = input.trim();
+    if (!content) return;
+
+    const userMsg = { role: "user", content };
+    const history = [...messages, userMsg];
+
+    setMessages(history);
+    setInput("");
+    draftRef.current = "";
+    setWorking(true);
+
+    try {
+      // Stream assistant tokens as they arrive
+      for await (const chunk of streamChat(history // , { model: 'gpt-4o-mini' } )) {
+        draftRef.current += chunk;
+        setMessages([...history, { role: "assistant", content: draftRef.current }]);
+      }
+    } catch (err) {
+      const fail = (draftRef.current || "") + `\n[error: ${String(err)}]`;
+      setMessages([...history, { role: "assistant", content: fail }]);
+    } finally {
+      setWorking(false);
+    }
+  }
+  
     return (
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
       <h1 style={{ marginBottom: 12 }}>Chat</h1>
