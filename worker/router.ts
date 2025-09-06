@@ -1,4 +1,4 @@
-// worker/router.ts
+// /worker/router.ts
 import { Router } from 'itty-router';
 
 // ---- CORS (unchanged)
@@ -19,53 +19,45 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 // ---- Router
 export const router = Router();
 
-// ---- Diagnostics (kept)
+// ---- Existing routes (kept)
 router.get('/api/__whoami', () =>
   json({ ok: true, stack: 'worker', ts: Date.now() }, { status: 200 })
 );
 
-// ---- CORS preflight (kept)
+// CORS preflight (kept)
 router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
 
-// ---- Email routes (kept)
+// Email routes (kept)
 import * as email from './handlers/email';
 router.post('/api/email/clear', email.clearCookie);
 
-// ---- Auth routes (NEW)
-// We normalize the path to be resilient to trailing slashes and variant proxies.
+// ---- Auth (new) — canonical under /api/auth/* with legacy aliases
 import * as auth from './handlers/auth';
 
-// Helper to normalize pathname (strip a single trailing slash, but keep root "/")
-function normPath(req: Request) {
-  const p = new URL(req.url).pathname;
-  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
-}
-
-// Accept both with and without trailing slash
+// Canonical
 router.post('/api/auth/login', (request: Request, env: any) => auth.login({ req: request, env }));
-router.post('/api/auth/login/*', (request: Request, env: any) => {
-  // fallback for trailing slash variants e.g. /api/auth/login/
-  if (normPath(request) === '/api/auth/login') return auth.login({ req: request, env });
-  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
-});
-
 router.get('/api/auth/me', (request: Request, env: any) => auth.me({ req: request, env }));
-router.get('/api/auth/me/*', (request: Request, env: any) => {
-  if (normPath(request) === '/api/auth/me') return auth.me({ req: request, env });
-  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
-});
-
 router.post('/api/auth/logout', (request: Request, env: any) => auth.logout({ req: request, env }));
-router.post('/api/auth/logout/*', (request: Request, env: any) => {
-  if (normPath(request) === '/api/auth/logout') return auth.logout({ req: request, env });
-  return json({ ok: false, error: `No route for ${new URL(request.url).pathname}` }, { status: 404 });
-});
+
+// Aliases for legacy callers (so nothing else breaks)
+router.post('/api/login', (request: Request, env: any) => auth.login({ req: request, env }));
+router.get('/api/me', (request: Request, env: any) => auth.me({ req: request, env }));
+router.post('/api/logout', (request: Request, env: any) => auth.logout({ req: request, env }));
+
+// Optional: accept trailing slashes for safety
+router.post('/api/auth/login/*', (r: Request, e: any) => auth.login({ req: r, env: e }));
+router.get('/api/auth/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
+router.post('/api/auth/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
+router.post('/api/login/*', (r: Request, e: any) => auth.login({ req: r, env: e }));
+router.get('/api/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
+router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
 
 // ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
   const p = new URL(req.url).pathname;
   return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
 });
+
 
 /*
 // worker/router.ts
