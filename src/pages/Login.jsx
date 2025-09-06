@@ -1,136 +1,102 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+// src/pages/Login.jsx
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { isAuthenticated, login, loading } = useAuth();
-
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  const nextPath = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    const raw = params.get("next");
-    // Default to /Chat if missing, empty, or pointing to /
-    if (!raw || raw === "/" || raw.trim() === "") return "/Chat";
-    return raw;
-  }, [location.search]);
-
-  useEffect(() => {
-    if (isAuthenticated) navigate(nextPath, { replace: true });
-  }, [isAuthenticated, nextPath, navigate]);
 
   async function onSubmit(e) {
     e.preventDefault();
-    if (busy) return;
     setError("");
-    setBusy(true);
+    setSubmitting(true);
     try {
-      if (!username.trim() || !password.trim()) throw new Error("Please enter username and password.");
-      const ok = await login(username.trim(), password);
-      if (!ok) throw new Error("Invalid username or password.");
-      navigate(nextPath, { replace: true });
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        try {
+          const j = JSON.parse(t);
+          setError(j?.error || "Login failed.");
+        } catch {
+          setError("Login failed.");
+        }
+        return;
+      }
+      // Success -> go to Chat
+      navigate("/chat", { replace: true });
     } catch (err) {
-      setError(err?.message || "Sign-in failed. Please try again.");
+      setError("Network error. Please try again.");
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   }
 
   return (
-    <div style={{ display: "grid", placeItems: "start center", minHeight: "60vh", padding: "2rem 1rem" }}>
-      <div
-        style={{
-          all: "initial",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-          color: "#111",
-          width: "100%",
-          maxWidth: 440,
-          background: "#fff",
-          borderRadius: 12,
-          border: "1px solid rgba(0,0,0,0.08)",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-          padding: "20px",
-        }}
-      >
-        <h1 style={{ all: "revert", margin: 0, marginBottom: 12, fontSize: 24, fontWeight: 600 }}>Sign in</h1>
+    <div style={{ maxWidth: 420, margin: "2rem auto", padding: "1.5rem", border: "1px solid #eee", borderRadius: 12 }}>
+      <h1 style={{ marginBottom: "1rem" }}>Sign In</h1>
+      <form onSubmit={onSubmit}>
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label style={{ display: "block", fontSize: 14, marginBottom: 6 }}>Username</label>
+          <input
+            type="text"
+            value={username}
+            autoComplete="username"
+            onChange={(e) => setUsername(e.target.value)}
+            style={{ width: "100%", padding: "10px", border: "1px solid #ddd", borderRadius: 8 }}
+            required
+          />
+        </div>
 
-        {error ? (
-          <div
-            role="alert"
-            style={{
-              all: "revert",
-              margin: "0 0 12px",
-              padding: "10px 12px",
-              border: "1px solid #e00",
-              borderRadius: 8,
-              background: "#ffecec",
-              fontSize: 14,
-              lineHeight: 1.3,
-            }}
-          >
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label style={{ display: "block", fontSize: 14, marginBottom: 6 }}>Password</label>
+          <input
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ width: "100%", padding: "10px", border: "1px solid #ddd", borderRadius: 8 }}
+            required
+          />
+        </div>
+
+        {error && (
+          <div style={{
+            marginBottom: "0.75rem",
+            padding: "0.5rem 0.75rem",
+            background: "#fdecea",
+            border: "1px solid #f5c2c0",
+            borderRadius: 8,
+            color: "#842029"
+          }}>
             {error}
           </div>
-        ) : null}
+        )}
 
-        <form onSubmit={onSubmit} noValidate style={{ display: "grid", gap: 12 }}>
-          <label style={{ all: "revert" }}>
-            <div style={{ marginBottom: 6, fontSize: 14 }}>Username</div>
-            <input
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              style={{
-                all: "revert",
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                outline: "none",
-              }}
-            />
-          </label>
-
-          <label style={{ all: "revert" }}>
-            <div style={{ marginBottom: 6, fontSize: 14 }}>Password</div>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{
-                all: "revert",
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                outline: "none",
-              }}
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={busy || loading || !username || !password}
-            style={{
-              all: "revert",
-              marginTop: 4,
-              padding: "10px 14px",
-              borderRadius: 8,
-              border: "1px solid #222",
-              background: busy || loading ? "#efefef" : "#fff",
-              cursor: busy || loading ? "not-allowed" : "pointer",
-            }}
-          >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          style={{
+            width: "100%",
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: "1px solid #0d6efd",
+            background: submitting ? "#8ab6ff" : "#0d6efd",
+            color: "#fff",
+            cursor: submitting ? "default" : "pointer"
+          }}
+        >
+          {submitting ? "Signing In…" : "Sign In"}
+        </button>
+      </form>
     </div>
   );
 }
