@@ -1,20 +1,16 @@
 // worker/index.ts
 
-// ✅ Keep your existing direct import (you had this already)
+// Preserve your existing imports/exports:
 import { clearDownloadEmailCookie } from "./handlers/email";
-
-// ✅ Re-export your Durable Object class so CF can instantiate it.
-//    This must match the class_name in wrangler.jsonc.
 export { DownloadLog } from "./do/DownloadLog";
 
+// Add these:
 import { router } from "./router";
+import * as auth from "./handlers/auth";
 
 export interface Env {
-  // If you serve the built app from /dist via Cloudflare assets:
-  // wrangler.jsonc → { "assets": { "directory": "dist", "binding": "ASSETS" } }
+  // Adjust typings to your bindings as needed:
   ASSETS?: Fetcher;
-
-  // Add your other bindings here if you like (KV, DO namespaces, secrets, etc.)
   // DOWNLOADS_DO?: DurableObjectNamespace;
   // SESSION_SECRET?: string;
 }
@@ -29,13 +25,11 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
-    // 🔹 0) Back-compat: honor your existing direct handler for /api/email/clear
-    //     (kept so nothing regresses, even though router also wires this path)
+    // ---- 0) Direct endpoint preserved from your original code
     if (pathname === "/api/email/clear" && request.method === "POST") {
       try {
-        // Signature matches your previous code: (request, env) -> Response
-        return await clearDownloadEmailCookie(request as any, env as any);
-      } catch (err) {
+        return await (clearDownloadEmailCookie as any)(request, env);
+      } catch {
         return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
           status: 500,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -43,12 +37,22 @@ export default {
       }
     }
 
-    // 🔹 1) Route ALL remaining /api/* traffic through itty-router FIRST
-    //     This is the key part that fixes "No route for /api/auth/login".
+    // ---- 1) Direct auth endpoints (bypass router to avoid any hanging path)
+    if (pathname === "/api/auth/login" && request.method === "POST") {
+      return auth.login({ req: request, env });
+    }
+    if (pathname === "/api/auth/me" && request.method === "GET") {
+      return auth.me({ req: request, env });
+    }
+    if (pathname === "/api/auth/logout" && request.method === "POST") {
+      return auth.logout({ req: request, env });
+    }
+
+    // ---- 2) All other API routes go through itty-router (unchanged behaviour)
     if (pathname.startsWith("/api/")) {
       try {
         return await router.handle(request, env, ctx);
-      } catch (err) {
+      } catch {
         return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
           status: 500,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -56,13 +60,13 @@ export default {
       }
     }
 
-    // 🔹 2) Static assets via ASSETS binding (unchanged behaviour)
+    // ---- 3) Static assets + SPA fallback (unchanged)
     if (env.ASSETS) {
-      // Try exact asset
+      // try the exact asset
       let res = await env.ASSETS.fetch(request);
       if (res.status !== 404) return res;
 
-      // SPA fallback for client-routed pages (React Router)
+      // React Router client routes: serve index.html
       if (wantsHtml(request)) {
         const indexUrl = new URL("/index.html", url.origin);
         const indexReq = new Request(indexUrl.toString(), request);
@@ -70,11 +74,10 @@ export default {
         if (res.status !== 404) return res;
       }
 
-      // Propagate asset 404
+      // propagate 404 from assets
       return res;
     }
 
-    // 🔹 3) No assets configured → minimal 404
     return new Response("Not Found", { status: 404 });
   },
 };
