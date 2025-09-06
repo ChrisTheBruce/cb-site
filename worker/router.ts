@@ -16,25 +16,45 @@ const json = (body: unknown, init: ResponseInit = {}) =>
     headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers || {}) },
   });
 
+// ---- Router
 export const router = Router();
 
-// ---- Diagnostics
+// ---- Diagnostics (kept)
 router.get('/api/__whoami', () =>
   json({ ok: true, stack: 'worker', ts: Date.now() }, { status: 200 })
 );
 
-// ---- CORS preflight (allow all under /api/*)
+// ---- CORS preflight (kept)
 router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
 
-// ---- Email routes
+// ---- Email routes (kept)
 import * as email from './handlers/email';
 router.post('/api/email/clear', email.clearCookie);
 
-// ---- 404 fallback
+// ---- Auth routes (NEW)
+import * as auth from './handlers/auth';
+
+// POST /api/auth/login   -> sets signed session cookie
+router.post('/api/auth/login', (request: Request, env: any) =>
+  auth.login({ req: request, env })
+);
+
+// GET /api/auth/me       -> returns { ok:true, user:{...} } if logged in
+router.get('/api/auth/me', (request: Request, env: any) =>
+  auth.me({ req: request, env })
+);
+
+// POST /api/auth/logout  -> clears session cookie
+router.post('/api/auth/logout', (request: Request, env: any) =>
+  auth.logout({ req: request, env })
+);
+
+// ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
   const p = new URL(req.url).pathname;
   return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
 });
+
 /*
 // worker/router.ts
 import type { Env } from './env';
