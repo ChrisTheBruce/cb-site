@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 type User = {
   id: string;
@@ -17,69 +24,80 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+async function fetchSession(signal?: AbortSignal): Promise<User | null> {
+  try {
+    const res = await fetch("/api/auth/me", {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data?.user as User) ?? null;
+  } catch (e: any) {
+    if (e?.name === "AbortError") return null;
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMe = async (signal?: AbortSignal) => {
-    try {
-      setError(null);
-      // IMPORTANT: include credentials so cookies flow
-      const res = await fetch("/api/auth/me", {
-        method: "GET",
-        credentials: "include",
-        headers: { "Accept": "application/json" },
-        signal
-      });
-      if (!res.ok) {
-        // not authenticated is fine; just null user
-        setUser(null);
-        return;
-      }
-      const data = await res.json();
-      setUser(data?.user ?? null);
-    } catch (e: any) {
-      if (e?.name !== "AbortError") setError("Failed to load session");
-      setUser(null);
-    }
-  };
-
   useEffect(() => {
     const ctrl = new AbortController();
     (async () => {
       setLoading(true);
-      await fetchMe(ctrl.signal);
-      setLoading(false);
+      setError(null);
+      try {
+        const u = await fetchSession(ctrl.signal);
+        setUser(u);
+      } catch {
+        setError("Failed to load session");
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     })();
     return () => ctrl.abort();
   }, []);
 
   const refresh = async () => {
     setLoading(true);
-    await fetchMe();
-    setLoading(false);
+    setError(null);
+    try {
+      const u = await fetchSession();
+      setUser(u);
+    } catch {
+      setError("Failed to refresh session");
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
-        credentials: "include"
+        credentials: "include",
       });
     } catch {
-      // ignore
+      // ignore network errors on logout
     } finally {
       setUser(null);
     }
   };
 
-  const value = useMemo(
+  const value: AuthContextValue = useMemo(
     () => ({ user, loading, error, refresh, signOut }),
     [user, loading, error]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  // No JSX in a .ts file:
+  return React.createElement(AuthContext.Provider, { value }, children as any);
 }
 
 export function useAuth() {
