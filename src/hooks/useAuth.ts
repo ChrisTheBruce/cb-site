@@ -1,5 +1,12 @@
 // src/hooks/useAuth.ts
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export type AuthUser = { name: string } | null;
 
@@ -19,16 +26,6 @@ type AuthContextShape = {
 const AuthContext = createContext<AuthContextShape | null>(null);
 
 // ---------- utilities ----------
-async function fetchJSON(input: RequestInfo, init?: RequestInit) {
-  const res = await fetch(input, init);
-  const text = await res.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { _raw: text };
-  }
-}
-
 async function getMe(): Promise<MeResponse> {
   // canonical
   const r1 = await fetch("/api/auth/me", {
@@ -68,7 +65,7 @@ async function postLogout(): Promise<boolean> {
   return r2.ok;
 }
 
-// ---------- Provider (restores the named export expected by main.jsx) ----------
+// ---------- Provider ----------
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -105,24 +102,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
-  const value = useMemo<AuthContextShape>(() => ({
-    user,
-    isAuthenticated: !!user,
-    loading,
-    error,
-    refresh,
-    logout,
-  }), [user, loading, error, refresh, logout]);
+  const value = useMemo<AuthContextShape>(
+    () => ({
+      user,
+      isAuthenticated: !!user,
+      loading,
+      error,
+      refresh,
+      logout,
+    }),
+    [user, loading, error, refresh, logout]
+  );
 
+  // No JSX in .ts files: use createElement
   return React.createElement(AuthContext.Provider, { value }, children);
 }
 
-// ---------- Hook (default export) ----------
-function useAuth(): AuthContextShape {
+// ---------- Hook ----------
+export function useAuth(): AuthContextShape {
   const ctx = useContext(AuthContext);
   if (ctx) return ctx;
 
-  // Fallback: work even if no <AuthProvider> is mounted (defensive)
+  // Defensive fallback if no <AuthProvider> is mounted
   const [user, setUser] = useState<AuthUser>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,4 +168,5 @@ function useAuth(): AuthContextShape {
   };
 }
 
+// Keep default export too, in case some files import default.
 export default useAuth;
