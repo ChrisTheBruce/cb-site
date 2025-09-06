@@ -1,49 +1,82 @@
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+// Existing components/pages in your repo:
+import Navbar from "./components/Navbar.tsx";
+import Footer from "./components/Footer.tsx";
+import Downloads from "./components/Downloads.tsx";
+import Work from "./components/Work.tsx";
+import Experience from "./components/Experience.tsx";
+import Contact from "./components/Contact.tsx";
+import HomeHero from "./components/HomeHero/HomeHero.tsx";
+import Login from "./pages/Login.jsx";
+import Chat from "./pages/Chat.jsx";
 
-import HomeHero from "@/components/HomeHero/HomeHero";
-import Work from "@/components/Work";
-import Experience from "@/components/Experience";
-import Contact from "@/components/Contact";
-import Downloads from "@/components/Downloads";
+// New page:
+import AdminDownloads from "./pages/AdminDownloads.tsx";
 
-import Login from "@/pages/Login";
-import Chat from "@/pages/Chat";
+function ChatOnlyLogsButton() {
+  const location = useLocation();
+  const navigate = useNavigate();
 
-import RequireAuth from "@/components/RequireAuth";
+  if (location.pathname !== "/chat") return null;
+
+  return (
+    <button
+      onClick={() => navigate("/admin/downloads")}
+      style={{
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        padding: "10px 14px",
+        borderRadius: "999px",
+        border: "1px solid #e5e5e5",
+        background: "white",
+        cursor: "pointer",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+        fontSize: 14
+      }}
+      aria-label="View Download Logs"
+      title="View Download Logs"
+    >
+      Download Logs
+    </button>
+  );
+}
 
 export default function App() {
   return (
-    <div className="app">
-      <Navbar />
-      <main style={{ minHeight: "60vh" }}>
-        <Routes>
-          <Route path="/" element={<HomeHero />} />
-          <Route path="/Work" element={<Work />} />
-          <Route path="/Experience" element={<Experience />} />
-          <Route path="/Contact" element={<Contact />} />
-          <Route path="/Downloads" element={<Downloads />} />
+    <BrowserRouter>
+      <div className="app-root" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <Navbar />
 
-          <Route path="/login" element={<Login />} />
+        <div style={{ flex: 1 }}>
+          <Routes>
+            {/* Home */}
+            <Route path="/" element={<HomeHero />} />
 
-          {/* Protect Chat only (no other global redirects) */}
-          <Route
-            path="/Chat"
-            element={
-              <RequireAuth>
-                <Chat />
-              </RequireAuth>
-            }
-          />
+            {/* Public sections */}
+            <Route path="/downloads" element={<Downloads />} />
+            <Route path="/work" element={<Work />} />
+            <Route path="/experience" element={<Experience />} />
+            <Route path="/contact" element={<Contact />} />
 
-          {/* fallback */}
-          <Route path="*" element={<HomeHero />} />
-        </Routes>
-      </main>
-      <Footer />
-    </div>
+            {/* Auth / chat */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/chat" element={<Chat />} />
+
+            {/* New admin logs page (auth is enforced by the backend) */}
+            <Route path="/admin/downloads" element={<AdminDownloads />} />
+
+            {/* Fallback to home */}
+            <Route path="*" element={<HomeHero />} />
+          </Routes>
+        </div>
+
+        <Footer />
+        {/* Renders only on /chat */}
+        <ChatOnlyLogsButton />
+      </div>
+    </BrowserRouter>
   );
 }
