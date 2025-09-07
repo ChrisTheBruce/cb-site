@@ -1,6 +1,9 @@
 // /worker/router.ts
 import { Router } from 'itty-router';
 
+// TOP of file (optional canary to confirm router loaded once on boot)
+try { console.log("🐛 [router] module loaded"); } catch {}
+
 // ---- CORS (unchanged)
 export const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
@@ -9,6 +12,7 @@ export const corsHeaders = {
   'Access-Control-Allow-Credentials': 'true',
   'X-App-Handler': 'worker',
 };
+
 
 const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -55,15 +59,21 @@ router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: 
 // ---- Chat routes (NEW) — minimal, safe wiring to your handlers/chat.ts
 import * as chat from './handlers/chat';
 
-// Health / self-test (GET): supports ?ping=1 and ?test=sse=1
-router.get('/api/chat', (request: Request, env: any, ctx: any) =>
-  chat.handleChat(request, env, ctx)
-);
+// GET /api/chat  (health + sse self-test live in the handler)
+router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
+  console.log("🐛 [router] /api/chat GET entered");
+  const res = await chat.handleChat(request, env, ctx);
+  console.log("🐛 [router] /api/chat GET after handler", res instanceof Response ? res.status : res);
+  return res;
+});
 
-// Primary chat (POST)
-router.post('/api/chat', (request: Request, env: any, ctx: any) =>
-  chat.handleChat(request, env, ctx)
-);
+// POST /api/chat  (streaming chat)
+router.post('/api/chat', async (request: Request, env: any, ctx: any) => {
+  console.log("🐛 [router] /api/chat POST entered");
+  const res = await chat.handleChat(request, env, ctx);
+  console.log("🐛 [router] /api/chat POST after handler", res instanceof Response ? res.status : res);
+  return res;
+});
 
 // Accept trailing slash variants for safety
 router.get('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
