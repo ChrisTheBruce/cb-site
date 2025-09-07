@@ -76,8 +76,8 @@ router.post('/api/chat', async (request: Request, env: any, ctx: any) => {
 });
 
 // Accept trailing slash variants for safety
-router.get('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
-router.post('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
+// router.get('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
+// router.post('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
 
 // ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
