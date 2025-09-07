@@ -1,5 +1,8 @@
 // worker/index.ts
-
+import { DBG, isDebug } from './env'; 
+import type { Env } from "./router";
+import { handleApi } from "./router";
+ 
 // Preserve your existing imports/exports:
 import { clearDownloadEmailCookie } from "./handlers/email";
 export { DownloadLog } from "./do/DownloadLog";
@@ -20,6 +23,8 @@ function wantsHtml(req: Request) {
   const accept = req.headers.get("Accept") || "";
   return req.method === "GET" && accept.includes("text/html");
 }
+
+DBG("Debug mode on");
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
