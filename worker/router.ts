@@ -1,6 +1,8 @@
 // /worker/router.ts
 import { Router } from 'itty-router';
 
+
+
 // TOP of file (optional canary to confirm router loaded once on boot)
 try { console.log("🐛 [router] module loaded"); } catch {}
 
@@ -22,6 +24,14 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 
 // ---- Router
 export const router = Router();
+
+router.all('*', (req: Request, env: any, ctx: any) => {
+  console.log("🐛 [router] saw request", req.method, new URL(req.url).pathname);
+  // IMPORTANT: fall through to normal matching, so return undefined here
+  return undefined as any;
+});
+
+
 
 // ---- Existing routes (kept)
 router.get('/api/__whoami', () =>
@@ -83,6 +93,7 @@ router.post('/api/chat', async (request: Request, env: any, ctx: any) => {
 // ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
   const p = new URL(req.url).pathname;
+  console.log("🐛 [router] 2nd router.all");
   return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
 });
 

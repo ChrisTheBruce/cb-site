@@ -40,6 +40,7 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMP = 0.5;
 
 export default async function chat(req: Request, env: Env, ctx: ExecutionContext) {
+  console.log("🐛 [chat] enter handleChat", req.method, new URL(req.url).search);
   return handleChat(req, env, ctx);
 }
 
