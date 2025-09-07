@@ -42,8 +42,8 @@ router.get('/api/__whoami', () =>
 router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
 
 // Email routes (kept)
-import * as email from './handlers/email';
-router.post('/api/email/clear', email.clearCookie);
+//import * as email from './handlers/email';
+//router.post('/api/email/clear', email.clearCookie);
 
 // ---- Auth (kept) — canonical under /api/auth/* with legacy aliases
 import * as auth from './handlers/auth';
