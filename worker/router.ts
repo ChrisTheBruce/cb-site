@@ -31,7 +31,7 @@ router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
 import * as email from './handlers/email';
 router.post('/api/email/clear', email.clearCookie);
 
-// ---- Auth (new) — canonical under /api/auth/* with legacy aliases
+// ---- Auth (kept) — canonical under /api/auth/* with legacy aliases
 import * as auth from './handlers/auth';
 
 // Canonical
@@ -52,11 +52,29 @@ router.post('/api/login/*', (r: Request, e: any) => auth.login({ req: r, env: e 
 router.get('/api/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
 router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
 
+// ---- Chat routes (NEW) — minimal, safe wiring to your handlers/chat.ts
+import * as chat from './handlers/chat';
+
+// Health / self-test (GET): supports ?ping=1 and ?test=sse=1
+router.get('/api/chat', (request: Request, env: any, ctx: any) =>
+  chat.handleChat(request, env, ctx)
+);
+
+// Primary chat (POST)
+router.post('/api/chat', (request: Request, env: any, ctx: any) =>
+  chat.handleChat(request, env, ctx)
+);
+
+// Accept trailing slash variants for safety
+router.get('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
+router.post('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
+
 // ---- 404 fallback (kept)
 router.all('*', (req: Request) => {
   const p = new URL(req.url).pathname;
   return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
 });
+
 
 
 /*
