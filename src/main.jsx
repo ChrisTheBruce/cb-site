@@ -25,10 +25,10 @@ import { AuthProvider } from "@/hooks/useAuth";
     /* no-op */
   }
 })();
-
+/*
 (async function initDebugFromServer() {
   try {
-    const w = /** @type {any} */ (window);
+    const w = /** @type {any}  (window);
     if (w.__DEBUG__ === true) return; // already on from Vite or manual toggle
     const r = await fetch("/api/debug-config", { cache: "no-store" });
     if (!r.ok) return;
@@ -42,6 +42,7 @@ import { AuthProvider } from "@/hooks/useAuth";
     // endpoint might not exist yet; ignore
   }
 })();
+*/
 
 // Minimal error boundary to avoid white screens
 class ErrorBoundary extends React.Component {
