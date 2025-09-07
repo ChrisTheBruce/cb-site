@@ -1,8 +1,6 @@
 // worker/index.ts
-import { DBG, isDebug } from './env'; 
-import type { Env } from "./router";
 import { handleApi } from "./router";
- 
+
 // Preserve your existing imports/exports:
 import { clearDownloadEmailCookie } from "./handlers/email";
 export { DownloadLog } from "./do/DownloadLog";

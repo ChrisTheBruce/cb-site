@@ -1,31 +1,23 @@
 // worker/handlers/chat.ts
-// Robust SSE chat proxy with MCP announce, diagnostics, and DBG logging.
-// Uses OPENAI_API (your secret) or OPENAI_API_KEY (alt). Gateway supported via OPENAI_BASE_URL.
+// SSE chat proxy with MCP announce, diagnostics, and DBG logging.
+// Supports OPENAI_API (your secret) or OPENAI_API_KEY (alt). Gateway via OPENAI_BASE_URL.
 
-// --- MODULE-LOAD CANARY (prints even if DEBUG is off) ---
-try { console.log("🐛 [chat] module loaded"); } catch { /* ignore */ }
+try { console.log("🐛 [chat] module loaded"); } catch {}
 
 interface Env {
-  OPENAI_API?: string;       // your secret name
-  OPENAI_API_KEY?: string;   // alt accepted
+  OPENAI_API?: string;
+  OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;  // e.g. https://gateway.ai.cloudflare.com/v1/.../cb-openai/
-  DEBUG_MODE?: string;       // "1", "true", "yes", "on", "debug" → enable logs
+  DEBUG_MODE?: string;       // "1","true","yes","on","debug" → enable
 }
 
-// ---------- Debug helpers ----------
 function isDebug(env: Env): boolean {
-  const val = (env.DEBUG_MODE || "").toString().trim().toLowerCase();
-  return ["1", "true", "yes", "on", "debug"].includes(val);
+  const v = (env.DEBUG_MODE || "").toString().trim().toLowerCase();
+  return ["1", "true", "yes", "on", "debug"].includes(v);
 }
-
-/** Prefer global DBG(env, ...args) if present; else console.log. */
 function DBG(env: Env, ...args: any[]) {
   if (!isDebug(env)) return;
-  try {
-    const g: any = globalThis as any;
-    if (typeof g.DBG === "function") { g.DBG(env, ...args); return; }
-  } catch { /* ignore */ }
-  try { console.log("🐛 [chat]", ...args); } catch { /* ignore */ }
+  try { console.log("🐛 [chat]", ...args); } catch {}
 }
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
@@ -40,66 +32,60 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMP = 0.5;
 
 export default async function chat(req: Request, env: Env, ctx: ExecutionContext) {
-  console.log("🐛 [chat] enter handleChat", req.method, new URL(req.url).search);
   return handleChat(req, env, ctx);
 }
 
+/** Unified handler: GET → health/SSE self-test; POST → stream via OpenAI. */
 export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext) {
   const url = new URL(req.url);
-  try {
-    DBG(env, "↘︎ enter handleChat", { method: req.method, path: url.pathname, qs: url.search });
+  console.log("🐛 [chat] enter handleChat", req.method, url.pathname + url.search);
 
+  try {
     if (req.method === "GET") {
       if (url.searchParams.get("ping")) {
         const payload = {
           ok: true,
-          route: "/api/chat",
-          sse_test: "/api/chat?test=sse=1",
+          route: url.pathname,
+          sse_test: `${url.pathname}?test=sse=1`,
           has_key: Boolean(getApiKey(env)),
           base_url_hint: getBaseUrl(env),
           debug: isDebug(env),
         };
         DBG(env, "ping", payload);
-        return json(200, payload, req, env);
+        return json(200, payload, req);
       }
       if (url.searchParams.get("test") === "sse") {
         DBG(env, "SSE self-test start");
-        const res = sseTest();
-        DBG(env, "SSE self-test returned Response");
-        return res;
+        return sseTest();
       }
-      DBG(env, "GET without ?ping / ?test=sse → 405");
-      return json(405, { ok: false, error: "Use POST for chat (or ?ping / ?test=sse)" }, req, env);
+      return json(405, { ok: false, error: "Use POST for chat (or ?ping / ?test=sse)" }, req);
     }
 
     if (req.method === "OPTIONS") {
-      DBG(env, "OPTIONS preflight");
       return new Response(null, { status: 204, headers: corsHeaders(req) });
     }
 
     if (req.method !== "POST") {
-      DBG(env, `Method not allowed: ${req.method}`);
-      return json(405, { ok: false, error: "Method Not Allowed" }, req, env);
+      return json(405, { ok: false, error: "Method Not Allowed" }, req);
     }
 
-    DBG(env, "Parsing JSON body…");
+    // Parse request
     let body: InboundBody;
     try {
       body = (await req.json()) as InboundBody;
     } catch (e: any) {
       DBG(env, "Invalid JSON body", e?.message || String(e));
-      return json(400, { ok: false, error: "Invalid JSON body" }, req, env);
+      return json(400, { ok: false, error: "Invalid JSON body" }, req);
     }
-
     if (!Array.isArray(body.messages) || body.messages.length === 0) {
       DBG(env, "Missing 'messages' array");
-      return json(400, { ok: false, error: "Missing 'messages' array" }, req, env);
+      return json(400, { ok: false, error: "Missing 'messages' array" }, req);
     }
 
     const apiKey = getApiKey(env);
     if (!apiKey) {
-      DBG(env, "OPENAI_API missing/unset");
-      return json(500, { ok: false, error: "OPENAI_API secret not configured" }, req, env);
+      DBG(env, "OPENAI_API missing");
+      return json(500, { ok: false, error: "OPENAI_API secret not configured" }, req);
     }
 
     const model = body.model || DEFAULT_MODEL;
@@ -107,10 +93,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const baseUrl = getBaseUrl(env);
     const upstreamUrl = `${baseUrl}/chat/completions`;
 
-    DBG(env, "Upstream config", {
-      baseUrl, upstreamUrl, model, temperature,
-      mcp: body?.mcp ? (body.mcp.name || body.mcp.service || true) : false,
-    });
+    DBG(env, "Upstream config", { baseUrl, upstreamUrl, model, temperature, mcp: body?.mcp });
 
     const upstream = await fetch(upstreamUrl, {
       method: "POST",
@@ -131,11 +114,10 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     if (!upstream.ok || !upstream.body) {
       const errText = await safeText(upstream);
       DBG(env, "Upstream error payload", errText?.slice(0, 400));
-      return json(
-        upstream.status || 502,
-        { ok: false, error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}` },
-        req, env
-      );
+      return json(upstream.status || 502, {
+        ok: false,
+        error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}`,
+      }, req);
     }
 
     const encoder = new TextEncoder();
@@ -162,17 +144,17 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
           DBG(env, "Upstream finished", { chunks, bytes });
         } catch (e: any) {
           DBG(env, "Streaming error", e?.message || String(e));
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`));
+          controller.enqueue(encoder.encode(
+            `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
+          ));
         } finally {
           DBG(env, "Emit [DONE] and close");
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
       },
-      cancel(reason) { DBG(env, "ReadableStream cancel", String(reason || "unknown")); },
     });
 
-    DBG(env, "Return SSE response");
     return new Response(stream, {
       status: 200,
       headers: {
@@ -185,17 +167,17 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
 
   } catch (e: any) {
     DBG(env, "Outer catch", e?.message || String(e));
-    return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req, env);
+    return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req);
   }
 }
 
-// Pages Functions compatibility
-export async function onRequestPost(context: any) {
-  const { request, env } = context;
-  return handleChat(request, env as Env, {} as ExecutionContext);
+/** Back-compat explicit stream entry (works for both GET test and POST chat). */
+export async function handleChatStream(req: Request, env: Env, ctx: ExecutionContext) {
+  // Reuse the same logic; the route is just a different path.
+  return handleChat(req, env, ctx);
 }
 
-// ---------------------------- Helpers ----------------------------
+// ---------------------------- helpers ----------------------------
 function getApiKey(env: Env): string | null {
   return env.OPENAI_API?.trim?.() || env.OPENAI_API_KEY?.trim?.() || null;
 }
@@ -208,14 +190,6 @@ function getBaseUrl(env: Env): string {
   }
   return "https://api.openai.com/v1";
 }
-async function json(status: number, obj: unknown, req: Request, env: Env): Promise<Response> {
-  DBG(env, "json()", { status, keys: Object.keys((obj as any) || {}) });
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(req) },
-  });
-}
-async function safeText(r: Response): Promise<string> { try { return await r.text(); } catch { return ""; } }
 function corsHeaders(req: Request, allowCredentials = false): Record<string, string> {
   const origin = req.headers.get("Origin") || "*";
   const h: Record<string, string> = {
@@ -227,6 +201,13 @@ function corsHeaders(req: Request, allowCredentials = false): Record<string, str
   if (allowCredentials) h["Access-Control-Allow-Credentials"] = "true";
   return h;
 }
+function json(status: number, obj: unknown, req: Request): Response {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(req) },
+  });
+}
+async function safeText(r: Response): Promise<string> { try { return await r.text(); } catch { return ""; } }
 function sseTest(): Response {
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

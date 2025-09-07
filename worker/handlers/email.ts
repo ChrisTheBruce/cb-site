@@ -1,5 +1,8 @@
 // /worker/handlers/email.ts
 
+try { console.log("🐛 [email] module loaded"); } catch {}
+
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',

@@ -13,6 +13,8 @@ type Ctx = {
 const COOKIE_NAME = "cb_session";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+try { console.log("🐛 [auth] module loaded"); } catch {}
+
 // Figure out a safe cookie Domain so apex + www share the session in prod.
 // For local/dev/preview hosts, we omit Domain so the cookie stays host-scoped (works in dev).
 function cookieDomainFor(req: Request): string | null {
