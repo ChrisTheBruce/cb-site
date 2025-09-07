@@ -1,19 +1,15 @@
 // worker/handlers/chat.ts
-// Minimal, robust SSE proxy to OpenAI (or CF AI Gateway) with MCP announcement.
-// - Never throws raw errors to the platform (prevents Cloudflare 1101 HTML pages).
-// - Returns JSON {ok:false,error:"..."} for non-stream errors.
-// - Streams OpenAI SSE through to the browser and sends a final [DONE].
-
-export interface Env {
-  OPENAI_API_KEY: string;
-  // Optional: set this to your CF AI Gateway OpenAI base
-  // e.g. https://gateway.ai.cloudflare.com/v1/<ACCOUNT_ID>/<GATEWAY_NAME>/openai
-  OPENAI_BASE_URL?: string;
+interface Env {
+  OPENAI_API?: string;       // your secret name
+  OPENAI_API_KEY?: string;   // alt accepted
+  OPENAI_BASE_URL?: string;  // e.g. https://gateway.ai.cloudflare.com/v1/.../cb-openai/
   DEBUG_MODE?: string;
 }
 
+type Msg = { role: "system" | "user" | "assistant"; content: string };
+
 type InboundBody = {
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  messages: Msg[];
   model?: string;
   temperature?: number;
   mcp?: { name?: string; service?: string; [k: string]: unknown } | null;
@@ -22,85 +18,97 @@ type InboundBody = {
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMP = 0.5;
 
-export async function chatHandler(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+export default async function chat(req: Request, env: Env, ctx: ExecutionContext) {
+  return handleChat(req, env, ctx);
+}
+
+export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext) {
   try {
+    if (req.method === "GET") {
+      const url = new URL(req.url);
+      if (url.searchParams.get("ping")) {
+        return json(200, {
+          ok: true,
+          route: "/api/chat",
+          sse_test: "/api/chat?test=sse=1",
+          has_key: Boolean(getApiKey(env)),
+          base_url_hint: getBaseUrl(env),
+        }, req);
+      }
+      if (url.searchParams.get("test") === "sse") {
+        return sseTest();
+      }
+      return json(405, { ok: false, error: "Use POST for chat (or ?ping / ?test=sse)" }, req);
+    }
+
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders(req, false) });
+    }
+
     if (req.method !== "POST") {
-      return jsonError(405, "Method Not Allowed");
+      return json(405, { ok: false, error: "Method Not Allowed" }, req);
     }
 
-    let payload: InboundBody | null = null;
+    let body: InboundBody;
     try {
-      payload = (await req.json()) as InboundBody;
+      body = (await req.json()) as InboundBody;
     } catch {
-      return jsonError(400, "Invalid JSON body");
+      return json(400, { ok: false, error: "Invalid JSON body" }, req);
+    }
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      return json(400, { ok: false, error: "Missing 'messages' array" }, req);
     }
 
-    if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
-      return jsonError(400, "Missing 'messages' array");
+    const apiKey = getApiKey(env);
+    if (!apiKey) {
+      return json(500, { ok: false, error: "OPENAI_API secret not configured" }, req);
     }
 
-    const model = payload.model || DEFAULT_MODEL;
-    const temperature =
-      typeof payload.temperature === "number" ? payload.temperature : DEFAULT_TEMP;
+    const model = body.model || DEFAULT_MODEL;
+    const temperature = typeof body.temperature === "number" ? body.temperature : DEFAULT_TEMP;
+    const upstreamUrl = `${getBaseUrl(env)}/chat/completions`;
 
-    const base = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
-    const url = `${base}/chat/completions`;
-
-    if (!env.OPENAI_API_KEY) {
-      return jsonError(500, "OPENAI_API_KEY not configured");
-    }
-
-    // Call OpenAI with streaming enabled
-    const upstream = await fetch(url, {
+    const upstream = await fetch(upstreamUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model,
-        temperature,
-        stream: true,
-        messages: payload.messages,
-      }),
-      // keepalive is not supported in Workers; omit
+      body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
     });
 
-    // If upstream fails or has no body, return a clean JSON error (don’t throw).
     if (!upstream.ok || !upstream.body) {
       const errText = await safeText(upstream);
-      return jsonError(
-        upstream.status || 502,
-        `Upstream error ${upstream.status || 0}: ${errText.slice(0, 500)}`
-      );
+      return json(upstream.status || 502, {
+        ok: false,
+        error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}`,
+      }, req);
     }
 
-    // Stream SSE to the client; optionally announce MCP service first.
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
     const reader = upstream.body.getReader();
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
-          // Announce MCP service (so the UI can show "MCP: <name>")
-          if (payload?.mcp && (payload.mcp.name || payload.mcp.service)) {
-            const m = JSON.stringify({ name: payload.mcp.name || payload.mcp.service });
-            controller.enqueue(encoder.encode(`event: mcp\ndata: ${m}\n\n`));
+          if (body?.mcp && (body.mcp.name || body.mcp.service)) {
+            const name = body.mcp.name || body.mcp.service;
+            controller.enqueue(
+              encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`)
+            );
           }
-
-          // Pass the OpenAI SSE through as-is.
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            // value is bytes from upstream; forward directly
             controller.enqueue(value);
           }
-        } catch (err: unknown) {
-          const message = (err as any)?.message || String(err);
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message })}\n\n`));
+        } catch (e: any) {
+          controller.enqueue(
+            encoder.encode(
+              `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
+            )
+          );
         } finally {
-          // Always terminate the stream cleanly
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
@@ -108,36 +116,81 @@ export async function chatHandler(req: Request, env: Env, _ctx: ExecutionContext
     });
 
     return new Response(stream, {
+      status: 200,
       headers: {
+        ...corsHeaders(req, false),
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
         "X-Robots-Tag": "noindex",
       },
     });
-  } catch (outerErr: unknown) {
-    // Final guard: return JSON error; do NOT let the Worker throw.
-    const message = (outerErr as any)?.message || String(outerErr);
-    return jsonError(500, `Internal error: ${message}`);
+  } catch (e: any) {
+    return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req);
   }
 }
 
-function jsonError(status: number, error: string): Response {
-  return new Response(JSON.stringify({ ok: false, error }), {
+// Pages Functions compatibility (harmless in Workers if unused)
+export async function onRequestPost(context: any) {
+  const { request, env } = context;
+  return handleChat(request, env as Env, {} as ExecutionContext);
+}
+
+// ---------------------------- Helpers ----------------------------
+function getApiKey(env: Env): string | null {
+  return env.OPENAI_API?.trim?.() || env.OPENAI_API_KEY?.trim?.() || null;
+}
+
+function getBaseUrl(env: Env): string {
+  let base = (env.OPENAI_BASE_URL || "").trim();
+  if (base) {
+    base = base.replace(/\/+$/, "");
+    if (!/\/openai$/.test(base)) base = `${base}/openai`;
+    return base;
+  }
+  return "https://api.openai.com/v1";
+}
+
+function json(status: number, obj: unknown, req: Request): Response {
+  return new Response(JSON.stringify(obj), {
     status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(req, false) },
   });
 }
 
-async function safeText(resp: Response): Promise<string> {
-  try {
-    return await resp.text();
-  } catch {
-    return "";
-  }
+async function safeText(r: Response): Promise<string> {
+  try { return await r.text(); } catch { return ""; }
 }
 
-export default chatHandler;
+// Allow the current Origin in dev/preview/prod; fall back to "*" for curl
+function corsHeaders(req: Request, allowCredentials: boolean): Record<string, string> {
+  const origin = req.headers.get("Origin") || "*";
+  const h: Record<string, string> = {
+    "Access-Control-Allow-Origin": origin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+  };
+  if (allowCredentials) h["Access-Control-Allow-Credentials"] = "true";
+  return h;
+}
+
+function sseTest(): Response {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(enc.encode(`event: mcp\ndata: {"name":"TestService"}\n\n`));
+      controller.enqueue(enc.encode(`data: This is a test SSE stream.\n\n`));
+      controller.enqueue(enc.encode(`data: It proves routing & streaming work.\n\n`));
+      controller.enqueue(enc.encode(`data: [DONE]\n\n`));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Robots-Tag": "noindex",
+    },
+  });
+}
