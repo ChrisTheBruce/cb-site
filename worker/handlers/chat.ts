@@ -2,6 +2,9 @@
 // Robust SSE chat proxy with MCP announce, diagnostics, and DBG logging.
 // Uses OPENAI_API (your secret) or OPENAI_API_KEY (alt). Gateway supported via OPENAI_BASE_URL.
 
+// --- MODULE-LOAD CANARY (prints even if DEBUG is off) ---
+try { console.log("🐛 [chat] module loaded"); } catch { /* ignore */ }
+
 interface Env {
   OPENAI_API?: string;       // your secret name
   OPENAI_API_KEY?: string;   // alt accepted
@@ -15,31 +18,17 @@ function isDebug(env: Env): boolean {
   return ["1", "true", "yes", "on", "debug"].includes(val);
 }
 
-/**
- * Prefer a project-wide DBG(env, ...args) if defined; else console.log.
- * Never throws; safe for Workers. Only logs when isDebug(env) is true.
- */
+/** Prefer global DBG(env, ...args) if present; else console.log. */
 function DBG(env: Env, ...args: any[]) {
   if (!isDebug(env)) return;
   try {
     const g: any = globalThis as any;
-    if (typeof g.DBG === "function") {
-      // If your global DBG expects (env, ...args), this will use it.
-      g.DBG(env, ...args);
-      return;
-    }
-  } catch {
-    // ignore
-  }
-  try {
-    console.log("🐛 [chat]", ...args);
-  } catch {
-    // ignore
-  }
+    if (typeof g.DBG === "function") { g.DBG(env, ...args); return; }
+  } catch { /* ignore */ }
+  try { console.log("🐛 [chat]", ...args); } catch { /* ignore */ }
 }
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
-
 type InboundBody = {
   messages: Msg[];
   model?: string;
@@ -59,7 +48,6 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
   try {
     DBG(env, "↘︎ enter handleChat", { method: req.method, path: url.pathname, qs: url.search });
 
-    // Diagnostics reachable even when router is miswired
     if (req.method === "GET") {
       if (url.searchParams.get("ping")) {
         const payload = {
@@ -93,7 +81,6 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
       return json(405, { ok: false, error: "Method Not Allowed" }, req, env);
     }
 
-    // Parse body (don’t log full content for safety)
     DBG(env, "Parsing JSON body…");
     let body: InboundBody;
     try {
@@ -120,10 +107,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const upstreamUrl = `${baseUrl}/chat/completions`;
 
     DBG(env, "Upstream config", {
-      baseUrl,
-      upstreamUrl,
-      model,
-      temperature,
+      baseUrl, upstreamUrl, model, temperature,
       mcp: body?.mcp ? (body.mcp.name || body.mcp.service || true) : false,
     });
 
@@ -149,8 +133,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
       return json(
         upstream.status || 502,
         { ok: false, error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}` },
-        req,
-        env
+        req, env
       );
     }
 
@@ -158,8 +141,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const reader = upstream.body.getReader();
 
     DBG(env, "Begin streaming…");
-    let bytes = 0;
-    let chunks = 0;
+    let bytes = 0, chunks = 0;
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -167,41 +149,30 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
           if (body?.mcp && (body.mcp.name || body.mcp.service)) {
             const name = body.mcp.name || body.mcp.service;
             DBG(env, "Emit MCP announce", name);
-            controller.enqueue(
-              encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`)
-            );
+            controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
           }
-          // Proxy upstream SSE
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            chunks++;
-            bytes += value?.byteLength || 0;
-            if (chunks === 1 || chunks % 20 === 0) {
-              DBG(env, "stream chunk", { chunks, bytes });
-            }
+            chunks++; bytes += value?.byteLength || 0;
+            if (chunks === 1 || chunks % 20 === 0) DBG(env, "stream chunk", { chunks, bytes });
             controller.enqueue(value);
           }
           DBG(env, "Upstream finished", { chunks, bytes });
         } catch (e: any) {
           DBG(env, "Streaming error", e?.message || String(e));
-          controller.enqueue(
-            encoder.encode(
-              `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
-            )
-          );
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`));
         } finally {
           DBG(env, "Emit [DONE] and close");
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
       },
-      cancel(reason) {
-        DBG(env, "ReadableStream cancel", String(reason || "unknown"));
-      },
+      cancel(reason) { DBG(env, "ReadableStream cancel", String(reason || "unknown")); },
     });
 
-    const response = new Response(stream, {
+    DBG(env, "Return SSE response");
+    return new Response(stream, {
       status: 200,
       headers: {
         ...corsHeaders(req),
@@ -211,15 +182,13 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
       },
     });
 
-    DBG(env, "Return SSE response");
-    return response;
   } catch (e: any) {
     DBG(env, "Outer catch", e?.message || String(e));
     return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req, env);
   }
 }
 
-// Pages Functions compatibility (harmless in Workers if unused)
+// Pages Functions compatibility
 export async function onRequestPost(context: any) {
   const { request, env } = context;
   return handleChat(request, env as Env, {} as ExecutionContext);
@@ -229,7 +198,6 @@ export async function onRequestPost(context: any) {
 function getApiKey(env: Env): string | null {
   return env.OPENAI_API?.trim?.() || env.OPENAI_API_KEY?.trim?.() || null;
 }
-
 function getBaseUrl(env: Env): string {
   let base = (env.OPENAI_BASE_URL || "").trim();
   if (base) {
@@ -239,20 +207,14 @@ function getBaseUrl(env: Env): string {
   }
   return "https://api.openai.com/v1";
 }
-
 async function json(status: number, obj: unknown, req: Request, env: Env): Promise<Response> {
-  // Note: keep this small; it can be emitted on error paths frequently.
   DBG(env, "json()", { status, keys: Object.keys((obj as any) || {}) });
   return new Response(JSON.stringify(obj), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(req) },
   });
 }
-
-async function safeText(r: Response): Promise<string> {
-  try { return await r.text(); } catch { return ""; }
-}
-
+async function safeText(r: Response): Promise<string> { try { return await r.text(); } catch { return ""; } }
 function corsHeaders(req: Request, allowCredentials = false): Record<string, string> {
   const origin = req.headers.get("Origin") || "*";
   const h: Record<string, string> = {
@@ -264,7 +226,6 @@ function corsHeaders(req: Request, allowCredentials = false): Record<string, str
   if (allowCredentials) h["Access-Control-Allow-Credentials"] = "true";
   return h;
 }
-
 function sseTest(): Response {
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
