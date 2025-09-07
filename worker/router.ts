@@ -58,7 +58,7 @@ router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: 
 
 // ---- Chat routes (NEW) — minimal, safe wiring to your handlers/chat.ts
 import * as chat from './handlers/chat';
-console.log("🐛 [chat] enter handleChat", …);
+console.log("🐛 [chat] enter handleChat");
 
 // GET /api/chat  (health + sse self-test live in the handler)
 router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
