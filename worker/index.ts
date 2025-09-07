@@ -24,11 +24,12 @@ function wantsHtml(req: Request) {
 
 DBG("Debug mode on");
 
+/*
 const loopHdr = request.headers.get("X-Loop-Trace");
 if (loopHdr) {
   DBG("index.ts: INBOUND has X-Loop-Trace (self-call?)", loopHdr);
 }
-
+*/
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
