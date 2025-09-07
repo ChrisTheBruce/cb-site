@@ -7,6 +7,7 @@ export { DownloadLog } from "./do/DownloadLog";
 // Add these:
 import { router } from "./router";
 import * as auth from "./handlers/auth";
+import { DBG } from "./env";
 
 export interface Env {
   // Adjust typings to your bindings as needed:
@@ -49,10 +50,22 @@ export default {
     }
 
     // ---- 2) All other API routes go through itty-router (unchanged behaviour)
-    if (pathname.startsWith("/api/")) {
-      try {
-        return await router.handle(request, env, ctx);
-      } catch {
+   if (pathname.startsWith("/api/")) {
+    try {
+      // ⬇️ ADD THIS
+      DBG(env, "index.ts: before router.handle", { method: request.method, path: pathname });
+
+      const res = await router.handle(request, env, ctx);
+
+      // ⬇️ ADD THIS
+      DBG(env, "index.ts: after router.handle", {
+        ok: res instanceof Response,
+        status: res instanceof Response ? res.status : undefined,
+      });
+
+      return res;
+      } catch (err: any) {
+        DBG(env, "index.ts: router.handle threw", err?.message || String(err));
         return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
           status: 500,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
