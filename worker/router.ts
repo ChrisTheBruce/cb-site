@@ -66,10 +66,12 @@ router.post('/api/login/*', (r: Request, e: any) => auth.login({ req: r, env: e 
 router.get('/api/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
 router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
 
+
 // ---- Chat routes (NEW) — minimal, safe wiring to your handlers/chat.ts
 import * as chat from './handlers/chat';
 console.log("🐛 [chat] enter handleChat");
 
+/*
 // GET /api/chat  (health + sse self-test live in the handler)
 router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
   console.log("🐛 [router] /api/chat GET entered");
@@ -79,8 +81,26 @@ router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
 });
 
 // POST /api/chat  (streaming chat)
-router.post('/api/chat', async (request: Request, env: any, ctx: any) => {
+router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
   console.log("🐛 [router] /api/chat POST entered");
+  const res = await chat.handleChat(request, env, ctx);
+  console.log("🐛 [router] /api/chat/stream POST after handler", res instanceof Response ? res.status : res);
+  return res;
+});
+*/
+
+// GET /api/chat/stream  (health + sse self-test live in the handler)
+router.get('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
+  console.log("🐛 [router] /api/chat/stream GET entered");
+  const res = await chat.handleChat(request, env, ctx);
+  console.log("🐛 [router] /api/chat/stream GET after handler", res instanceof Response ? res.status : res);
+  return res;
+});
+
+
+// POST /api/chat/stream  (streaming chat)
+router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
+  console.log("🐛 [router] /api/chat/stream POST entered");
   const res = await chat.handleChat(request, env, ctx);
   console.log("🐛 [router] /api/chat POST after handler", res instanceof Response ? res.status : res);
   return res;

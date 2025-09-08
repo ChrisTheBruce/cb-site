@@ -1,5 +1,7 @@
 // worker/index.ts
-import { handleApi } from "./router";
+DBG("worker/index.ts Debug mode on");
+
+//import { handleApi } from "./router";
 
 // Preserve your existing imports/exports:
 import { clearDownloadEmailCookie } from "./handlers/email";
@@ -10,6 +12,7 @@ import { router } from "./router";
 import * as auth from "./handlers/auth";
 import { DBG } from "./env";
 
+
 export interface Env {
   // Adjust typings to your bindings as needed:
    ASSETS?: Fetcher;
@@ -17,12 +20,13 @@ export interface Env {
   // SESSION_SECRET?: string;
 }
 
+
 function wantsHtml(req: Request) {
   const accept = req.headers.get("Accept") || "";
   return req.method === "GET" && accept.includes("text/html");
 }
 
-DBG("Debug mode on");
+
 
 
 
