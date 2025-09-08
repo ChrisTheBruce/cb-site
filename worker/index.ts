@@ -42,7 +42,35 @@ function wantsHtml(req: Request) {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const t0 = Date.now();
     const { pathname } = url;
+
+
+    console.log("📩 entering fetch, about to call router.handle");
+
+    // TIMEOUT GUARD: logs if router never resolves
+    const timeoutMs = 15000; // 15s just for diagnostics
+    const hung = new Promise<Response>((resolve) => {
+      setTimeout(() => {
+        console.error(`⏳ router.handle still pending after ${timeoutMs}ms for ${request.url}`);
+        // We don't resolve here to avoid masking the real handler; just log.
+      }, timeoutMs);
+    }) as Promise<Response>;
+
+    let res: Response;
+    try {
+      const handled = router.handle(request, env, ctx);
+      res = await Promise.race([handled, hung]); // logs on hang, still awaits real result
+    } catch (err) {
+      console.error("💥 router.handle threw:", err);
+      return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
+        status: 500,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    console.log(`✅ router.handle resolved in ${Date.now() - t0}ms`);
+    return res;
 
     // ---- 0) Direct endpoint preserved from your original code
     if (pathname === "/api/email/clear" && request.method === "POST") {
