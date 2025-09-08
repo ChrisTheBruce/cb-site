@@ -110,7 +110,7 @@ async function notifyDownload(
   }
 }
 
-export default function Downloads() {
+function Downloads() {
   // Hook for capturing and exposing email on the page
   const dl = useDlEmail() as {
     email?: string | null;
@@ -125,48 +125,41 @@ export default function Downloads() {
     setEmailUI(dl?.email ?? null);
   }, [dl?.email]);
 
-  async function handleClearEmail() {
+  const handleClearEmail = React.useCallback(async () => {
     try {
       await postJson<{ ok: boolean }>("/api/email/clear");
-      // Cookie cleared server-side; reflect immediately in the UI
       setEmailUI(null);
       DBG("download_email cookie cleared");
     } catch (e) {
       console.error("Failed to clear download email", e);
       alert("Sorry, failed to clear the saved email.");
     }
-  }
+  }, []);
 
-  async function onClickDownload(path: string, title?: string) {
+  const onClickDownload = React.useCallback(async (path: string, title?: string) => {
     try {
-      // Ensure we have an email before proceeding
       const ensured = (await dl?.ensureEmail?.()) || false;
       if (!ensured) return;
 
-      // Build a small payload for the notify endpoint
       const payload = {
         path,
         title,
-        email: ensured, // string email returned by ensureEmail
+        email: ensured,
         ts: Date.now(),
         ua: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
       };
 
-      // Fire-and-forget notify BEFORE navigating
       void notifyDownload(NOTIFY_ENDPOINT, payload);
-
-      // Start the download last
       window.location.href = path;
     } catch (err) {
       DBG("onClickDownload error", err);
-      // Even if notify fails, still attempt the download
       try {
         window.location.href = path;
       } catch {
         /* no-op */
       }
     }
-  }
+  }, [dl]);
 
   return (
     <section className="py-12 sm:py-16">
@@ -225,3 +218,5 @@ export default function Downloads() {
     </section>
   );
 }
+
+export default React.memo(Downloads);
