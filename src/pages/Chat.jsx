@@ -24,18 +24,6 @@ export default function Chat() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // While we don't know auth state yet, render nothing (or show a lightweight spinner)
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
-        Loading your session…
-      </div>
-    );
-  }
-
-  // Not signed in? Go to login.
-  if (!user) return <Navigate to="/login" replace />;
-
   const onSend = useCallback(async (e) => {
     e.preventDefault();
     const content = input.trim();
@@ -80,7 +68,19 @@ export default function Chat() {
     } finally {
       setWorking(false);
     }
-  }, [messages]);
+  }, [messages, input]);
+
+  // While we don't know auth state yet, render nothing (or show a lightweight spinner)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
+        Loading your session…
+      </div>
+    );
+  }
+
+  // Not signed in? Go to login.
+  if (!user) return <Navigate to="/login" replace />;
 
   return (
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
