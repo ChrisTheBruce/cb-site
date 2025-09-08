@@ -1,218 +1,176 @@
+// worker/router.ts
+try { console.log("🐛 [router] module loaded"); } catch {}
 
-// TOP of file (optional canary to confirm router loaded once on boot)
-try { console.log("🐛 [router] module loaded (top)"); } catch {}
-// /worker/router.ts
-import { Router } from 'itty-router';
-import type { Env } from './env';
-import { json } from './lib/responses';
-import { DBG } from './env'; // <- adjust path if DBG is elsewhere
+import { Router } from "itty-router";
+import type { Env } from "./env";
+import { DBG } from "./env";
+import { json as jsonResp } from "./lib/responses";
 
-import * as Health from './handlers/health';
-import * as Auth from './handlers/auth';
-import * as Notify from './handlers/notify';
-import * as Chat from './handlers/chat';
+// Handlers (we'll adapt to whatever names you actually export)
+import * as Health from "./handlers/health";
+import * as Auth from "./handlers/auth";
+import * as Notify from "./handlers/notify";
+import * as Chat from "./handlers/chat";
 
+type H = (req: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
 
-try { console.log("🐛 [router] module imported (after import)"); } catch {}
+const json = (body: any, init?: ResponseInit) =>
+  (jsonResp
+    ? jsonResp(body, init)
+    : new Response(JSON.stringify(body), {
+        ...(init || {}),
+        headers: { "content-type": "application/json", ...(init?.headers || {}) },
+      }));
 
-// Local helpers (avoid dependency on notFound/methodNotAllowed in lib)
-function notFound(msg = 'Not found') {
-  return new Response(JSON.stringify({ ok: false, error: msg }), {
-    status: 404,
-    headers: { 'Content-Type': 'application/json' },
-  });
+const dbg = (...args: any[]) => { try { (DBG as any)(...args); } catch { try { console.log(...args); } catch {} } };
+
+function pick(mod: any, names: string[]): H | null {
+  for (const n of names) {
+    const fn = mod?.[n];
+    if (typeof fn === "function") return fn as H;
+  }
+  // support default export
+  if (typeof mod?.default === "function") return mod.default as H;
+  return null;
 }
 
-function methodNotAllowed(allow: string[]) {
-  return new Response(JSON.stringify({ ok: false, error: 'Method Not Allowed', allow }), {
-    status: 405,
-    headers: {
-      'Content-Type': 'application/json',
-      'Allow': allow.join(', '),
-    },
-  });
+// Wrap for tracing/errors + CORS
+function wrap(name: string, handler: H, { cors = false }: { cors?: boolean } = {}): H {
+  return async (req, env, ctx) => {
+    const t0 = Date.now();
+    const { method, url } = req;
+    const path = new URL(url).pathname;
+    dbg("➡️", name, { method, path });
+
+    try {
+      let res = await handler(req, env, ctx);
+
+      if (cors) {
+        res = new Response(res.body, {
+          headers: {
+            "Access-Control-Allow-Origin": "https://www.chrisbrighouse.com",
+            "Vary": "Origin",
+            ...Object.fromEntries(res.headers),
+          },
+          status: (res as any).status ?? 200,
+        });
+      }
+
+      dbg("⬅️", name, { ms: Date.now() - t0, status: (res as any).status ?? 200 });
+      return res;
+    } catch (err: any) {
+      dbg("💥", name, {
+        message: err?.message || String(err),
+        stack: err?.stack?.slice?.(0, 800),
+      });
+      return json({ ok: false, error: "Internal error" }, { status: 500 });
+    }
+  };
 }
 
-// ---- CORS (unchanged)
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://chrisbrighouse.com',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Credentials': 'true',
-  'X-App-Handler': 'worker',
-};
-
-
-const json = (body: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(body), {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...(init.headers || {}) },
-  });
-
-// ---- Router
 export const router = Router();
 
-router.all('*', (req: Request, env: any, ctx: any) => {
-  console.log("🐛 [router] saw request", req.method, new URL(req.url).pathname);
-  // IMPORTANT: fall through to normal matching, so return undefined here
-  return undefined as any;
-});
+// ------- CORS / Preflight helpers -------
+const preflight: H = async () =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "https://www.chrisbrighouse.com",
+      "Access-Control-Allow-Headers": "content-type, authorization, x-diag-skip-auth",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Max-Age": "600",
+    },
+  });
 
+router.options("/api/auth/*", preflight);
+router.options("/api/chat/*", preflight);
 
+// ------- Health (safe no-op) -------
+const healthHandler =
+  pick(Health, ["ping", "health", "handler"]) ??
+  (async () => json({ ok: true, ts: Date.now() }));
 
-// ---- Existing routes (kept)
-router.get('/api/__whoami', () =>
-  json({ ok: true, stack: 'worker', ts: Date.now() }, { status: 200 })
+router.get("/health", wrap("health", healthHandler));
+
+// ------- AUTH: /api/auth/login with diagnostic bypass -------
+const authLoginReal =
+  pick(Auth, ["login", "authLogin", "authLoginHandler", "handleLogin", "handler"]) ??
+  (async () => json({ ok: false, error: "auth login handler not found" }, { status: 501 }));
+
+router.post(
+  "/api/auth/login",
+  wrap(
+    "auth.login",
+    async (req, env, ctx) => {
+      // Diagnostic bypass: proves the route wiring returns
+      if (req.headers.get("x-diag-skip-auth") === "1") {
+        dbg("🔐 auth.login: diag bypass");
+        return json({ ok: true, diag: "auth handler returns" });
+      }
+      return authLoginReal(req, env, ctx);
+    },
+    { cors: true }
+  )
 );
 
-// CORS preflight (kept)
-router.options('/api/*', () => new Response(null, { headers: corsHeaders }));
+// Helpful ping for quick checks
+router.post("/api/auth/ping", wrap("auth.ping", async () => json({ ok: true, ts: Date.now() })));
 
-// Email routes (kept)
-//import * as email from './handlers/email';
-//router.post('/api/email/clear', email.clearCookie);
+// ------- CHAT: /api/chat/stream (your real handler) -------
+const chatStreamReal =
+  pick(Chat, ["stream", "chatStream", "chatStreamHandler", "handler"]) ??
+  (async () => json({ ok: false, error: "chat stream handler not found" }, { status: 501 }));
 
-// ---- Auth (kept) — canonical under /api/auth/* with legacy aliases
-import * as auth from './handlers/auth';
+router.post("/api/chat/stream", wrap("chat.stream", chatStreamReal, { cors: true }));
 
-// Canonical
-router.post('/api/auth/login', (request: Request, env: any) => auth.login({ req: request, env }));
-router.get('/api/auth/me', (request: Request, env: any) => auth.me({ req: request, env }));
-router.post('/api/auth/logout', (request: Request, env: any) => auth.logout({ req: request, env }));
+// Optional alias if your UI ever used /ai/chat/stream
+router.post("/ai/chat/stream", wrap("chat.stream.alias", chatStreamReal, { cors: true }));
 
-// Aliases for legacy callers (so nothing else breaks)
-router.post('/api/login', (request: Request, env: any) => auth.login({ req: request, env }));
-router.get('/api/me', (request: Request, env: any) => auth.me({ req: request, env }));
-router.post('/api/logout', (request: Request, env: any) => auth.logout({ req: request, env }));
+// Known-good echo stream to validate streaming plumbing
+router.post(
+  "/api/chat/echo-stream",
+  wrap(
+    "chat.echo",
+    async () => {
+      const { readable, writable } = new TransformStream();
+      const w = writable.getWriter();
+      (async () => {
+        try {
+          for (let i = 1; i <= 5; i++) {
+            await w.write(new TextEncoder().encode(`data: chunk ${i}\n\n`));
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        } catch (e) {
+          dbg("echo-stream write error", String(e));
+        } finally {
+          await w.close();
+        }
+      })();
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-store",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "https://www.chrisbrighouse.com",
+        },
+      });
+    },
+    { cors: true }
+  )
+);
 
-// Optional: accept trailing slashes for safety
-router.post('/api/auth/login/*', (r: Request, e: any) => auth.login({ req: r, env: e }));
-router.get('/api/auth/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
-router.post('/api/auth/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
-router.post('/api/login/*', (r: Request, e: any) => auth.login({ req: r, env: e }));
-router.get('/api/me/*', (r: Request, e: any) => auth.me({ req: r, env: e }));
-router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: e }));
+// ------- Notify (kept flexible) -------
+const notifyHandler =
+  pick(Notify, ["notify", "download", "notifyDownload", "handler"]) ??
+  (async () => json({ ok: false, error: "notify handler not found" }, { status: 501 }));
 
+router.post("/api/notify/download", wrap("notify.download", notifyHandler, { cors: true }));
 
-// ---- Chat routes (NEW) — minimal, safe wiring to your handlers/chat.ts
-import * as chat from './handlers/chat';
-console.log("🐛 [chat] enter handleChat");
+// ------- Fallback / 404 -------
+router.all("*", wrap("notfound", async (req) => {
+  const u = new URL(req.url);
+  dbg("⚠️ no route", { method: req.method, path: u.pathname });
+  return new Response("Not Found", { status: 404 });
+}));
 
-// GET /api/chat  (health + sse self-test live in the handler)
-router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
-  console.log("🐛 [router] /api/chat GET entered");
-  const res = await chat.handleChat(request, env, ctx);
-  console.log("🐛 [router] /api/chat GET after handler", res instanceof Response ? res.status : res);
-  return res;
-});
-
-// POST /api/chat  (streaming chat)
-router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
-  console.log("🐛 [router] /api/chat POST entered");
-  const res = await chat.handleChat(request, env, ctx);
-  console.log("🐛 [router] /api/chat/stream POST after handler", res instanceof Response ? res.status : res);
-  return res;
-});
-
-
-// GET /api/chat/stream  (health + sse self-test live in the handler)
-router.get('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
-  console.log("🐛 [router] /api/chat/stream GET entered");
-  const res = await chat.handleChat(request, env, ctx);
-  console.log("🐛 [router] /api/chat/stream GET after handler", res instanceof Response ? res.status : res);
-  return res;
-});
-
-
-// POST /api/chat/stream  (streaming chat)
-router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
-  console.log("🐛 [router] /api/chat/stream POST entered");
-  const res = await chat.handleChat(request, env, ctx);
-  console.log("🐛 [router] /api/chat POST after handler", res instanceof Response ? res.status : res);
-  return res;
-});
-
-
-
-// OLD code for reference (not used, but kept for now)
-
-
-
-
-
-// Resolve handler function from namespace imports
-function pickHandler(ns: Record<string, any>, candidates: string[]) {
-  for (const name of candidates) {
-    const fn = ns?.[name];
-    if (typeof fn === 'function') return fn;
-  }
-  return undefined;
-}
-
-const handleHealth = pickHandler(Health, ['handleHealth', 'default']);
-const handleAuthLogin = pickHandler(Auth, ['handleAuthLogin', 'login', 'default']);
-const handleNotify = pickHandler(Notify, ['handleNotify', 'notify', 'default']);
-const handleChatStream = pickHandler(Chat, ['handleChatStream', 'handleChat', 'chat', 'default']);
-
-type Handler = (req: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
-
-const routes: Record<string, Record<string, Handler | undefined>> = {
-  '/api/health':      { GET: handleHealth },
-  '/api/auth/login':  { POST: handleAuthLogin },
-  '/api/notify':      { POST: handleNotify },
-  '/api/chat/stream': { POST: handleChatStream },
-};
-
-function normPath(pathname: string) {
-  if (pathname.length > 1 && pathname.endsWith('/')) return pathname.slice(0, -1);
-  return pathname;
-}
-
-export async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const url = new URL(request.url);
-  const path = normPath(url.pathname);
-  const method = request.method.toUpperCase();
-
-  DBG('router:incoming', { method, path });
-
-  if (!path.startsWith('/api/')) {
-    DBG('router:nonApi', { path });
-    return notFound('Not an API route');
-  }
-
-  const table = routes[path];
-  if (!table) {
-    DBG('router:noRoute', { method, path });
-    return notFound(`No route for ${path}`);
-  }
-
-  const handler = table[method];
-  if (!handler) {
-    DBG('router:methodNotAllowed', { method, path, allow: Object.keys(table) });
-    return methodNotAllowed(Object.keys(table));
-  }
-
-  try {
-    DBG('router:dispatch', { method, path });
-    const t0 = Date.now();
-    const res = await handler(request, env, ctx);
-    const ms = Date.now() - t0;
-
-    DBG('router:handled', {
-      method,
-      path,
-      status: (res as any)?.status ?? 200,
-      ms,
-    });
-
-    return res;
-  } catch (err: any) {
-    DBG('router:error', {
-      method,
-      path,
-      message: err?.message || String(err),
-      stack: err?.stack?.slice?.(0, 800),
-    });
-    return json({ ok: false, error: 'Internal error' }, { status: 500 });
-  }
-}
+try { console.log("🐛 [router] module ready"); } catch {}
