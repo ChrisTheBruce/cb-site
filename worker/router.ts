@@ -1,10 +1,10 @@
-// /worker/router.ts
-import { Router } from 'itty-router';
-
-
 
 // TOP of file (optional canary to confirm router loaded once on boot)
-try { console.log("🐛 [router] module loaded"); } catch {}
+try { console.log("🐛 [router] module loaded (top)"); } catch {}
+// /worker/router.ts
+import { Router } from 'itty-router';
+try { console.log("🐛 [router] module imported (after import)"); } catch {}
+
 
 // ---- CORS (unchanged)
 export const corsHeaders = {
