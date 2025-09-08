@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function Navbar() {
-  const { isAuthenticated, logout, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
 
   const onSignIn = () => {
@@ -12,7 +12,7 @@ export default function Navbar() {
   };
 
   const onSignOut = async () => {
-    await logout();
+    await signOut();
     navigate("/", { replace: true });
   };
 
@@ -31,7 +31,7 @@ export default function Navbar() {
         </nav>
 
         <div style={{ marginLeft: 16 }}>
-          {isAuthenticated ? (
+          {user ? (
             <button onClick={onSignOut} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #222", background: "#fff", cursor: "pointer" }} disabled={loading}>
               Sign out
             </button>

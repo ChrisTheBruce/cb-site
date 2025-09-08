@@ -21,41 +21,62 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 // For local/dev/preview hosts, we omit Domain so the cookie stays host-scoped (works in dev).
 function cookieDomainFor(req: Request): string | null {
   const host = new URL(req.url).hostname.toLowerCase();
+  
+  console.log("🍪 cookieDomainFor debug:", { url: req.url, host });
+
+  // For localhost and development, always return null for host-scoped cookies
+  if (host === "localhost" || host === "127.0.0.1" || host.includes("localhost")) {
+    console.log("🍪 Detected localhost, returning null domain");
+    return null;
+  }
+
+  const userAgent = req.headers.get("User-Agent") || "";
+  const isLocalDev = userAgent.includes("Mozilla") && req.url.includes("chrisbrighouse.com");
+  
+  if (isLocalDev) {
+    console.log("🍪 Detected CloudFlare Workers local dev, returning null domain");
+    return null;
+  }
 
   // Production domains you actually use
   if (host === "chrisbrighouse.com" || host === "www.chrisbrighouse.com") {
+    console.log("🍪 Detected production domain, returning .chrisbrighouse.com");
     return ".chrisbrighouse.com";
   }
   // If you later add subdomains like app.chrisbrighouse.com, this still works:
   if (host.endsWith(".chrisbrighouse.com")) {
+    console.log("🍪 Detected subdomain, returning .chrisbrighouse.com");
     return ".chrisbrighouse.com";
   }
 
-  // Workers dev/preview, localhost, etc. → keep host-only to avoid cross-site cookie issues.
+  // Workers dev/preview, etc. → keep host-only to avoid cross-site cookie issues.
+  console.log("🍪 Unknown host, returning null domain");
   return null;
 }
 
-function setCookieHeader(name: string, value: string, maxAgeSec: number, domain: string | null) {
+function setCookieHeader(name: string, value: string, maxAgeSec: number, domain: string | null, req: Request) {
+  const isSecure = new URL(req.url).protocol === "https:";
   const attrs = [
     `Path=/`,
     `HttpOnly`,
     `SameSite=Lax`,
-    `Secure`,
     `Max-Age=${maxAgeSec}`,
   ];
+  if (isSecure) attrs.push(`Secure`);
   if (domain) attrs.push(`Domain=${domain}`);
   return `${name}=${value}; ${attrs.join("; ")}`;
 }
 
-function clearCookieHeader(name: string, domain: string | null) {
+function clearCookieHeader(name: string, domain: string | null, req: Request) {
+  const isSecure = new URL(req.url).protocol === "https:";
   const attrs = [
     `Path=/`,
     `HttpOnly`,
     `SameSite=Lax`,
-    `Secure`,
     `Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
     `Max-Age=0`,
   ];
+  if (isSecure) attrs.push(`Secure`);
   if (domain) attrs.push(`Domain=${domain}`);
   return `${name}=; ${attrs.join("; ")}`;
 }
@@ -95,25 +116,32 @@ export async function login({ req }: Ctx): Promise<Response> {
     }
     const { username, password } = body;
 
+    console.log("🔐 Login attempt:", { username, hasPassword: !!password });
+
     // Single allowed user (not shown client-side)
     if (!(username === "chris" && password === "badcommand")) {
+      console.log("❌ Invalid credentials");
       return json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
     // Simple, robust session value (no HMAC to avoid subtle crypto issues)
     const session = `s:${crypto.randomUUID()}.${Date.now()}`;
-
     const domain = cookieDomainFor(req);
+    const cookieHeader = setCookieHeader(COOKIE_NAME, encodeURIComponent(session), COOKIE_MAX_AGE, domain, req);
+    
+    console.log("✅ Login successful, setting cookie:", { domain, cookieHeader });
+
     return json(
-      { ok: true, user: { name: "chris" } },
+      { ok: true, user: { id: "chris", email: "chris@chrisbrighouse.com", name: "chris" } },
       {
         status: 200,
         headers: {
-          "Set-Cookie": setCookieHeader(COOKIE_NAME, encodeURIComponent(session), COOKIE_MAX_AGE, domain),
+          "Set-Cookie": cookieHeader,
         },
       }
     );
-  } catch {
+  } catch (err) {
+    console.error("💥 Login error:", err);
     return json({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
@@ -124,7 +152,7 @@ export async function me({ req }: Ctx): Promise<Response> {
     if (!cookieVal || !decodeURIComponent(cookieVal).startsWith("s:")) {
       return json({ ok: false }, { status: 401 });
     }
-    return json({ ok: true, user: { name: "chris" } }, { status: 200 });
+    return json({ ok: true, user: { id: "chris", email: "chris@chrisbrighouse.com", name: "chris" } }, { status: 200 });
   } catch {
     return json({ ok: false, error: "Internal error" }, { status: 500 });
   }
@@ -139,7 +167,7 @@ export async function logout({ req }: Ctx): Promise<Response> {
       {
         status: 200,
         headers: {
-          "Set-Cookie": clearCookieHeader(COOKIE_NAME, domain),
+          "Set-Cookie": clearCookieHeader(COOKIE_NAME, domain, req),
         },
       }
     );

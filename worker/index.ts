@@ -45,34 +45,20 @@ export default {
     const t0 = Date.now();
     const { pathname } = url;
 
-
     console.log("📩 entering fetch, about to call router.handle");
 
-    // TIMEOUT GUARD: logs if router never resolves
-    const timeoutMs = 15000; // 15s just for diagnostics
-    const hung = new Promise<Response>((resolve) => {
-      setTimeout(() => {
-        console.error(`⏳ router.handle still pending after ${timeoutMs}ms for ${request.url}`);
-        // We don't resolve here to avoid masking the real handler; just log.
-      }, timeoutMs);
-    }) as Promise<Response>;
-
-    let res: Response;
-    try {
-      const handled = router.handle(request, env, ctx);
-      res = await Promise.race([handled, hung]); // logs on hang, still awaits real result
-    } catch (err) {
-      console.error("💥 router.handle threw:", err);
-      return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
+    // ---- 1) Direct auth endpoints (MOVED BEFORE router to avoid conflicts)
+    if (pathname === "/api/auth/login" && request.method === "POST") {
+      return auth.login({ req: request, env });
+    }
+    if (pathname === "/api/auth/me" && request.method === "GET") {
+      return auth.me({ req: request, env });
+    }
+    if (pathname === "/api/auth/logout" && request.method === "POST") {
+      return auth.logout({ req: request, env });
     }
 
-    console.log(`✅ router.handle resolved in ${Date.now() - t0}ms`);
-    return res;
-
-    // ---- 0) Direct endpoint preserved from your original code
+    // ---- 2) Direct endpoint preserved from your original code
     if (pathname === "/api/email/clear" && request.method === "POST") {
       try {
         return await (clearDownloadEmailCookie as any)(request, env);
@@ -84,32 +70,16 @@ export default {
       }
     }
 
-    // ---- 1) Direct auth endpoints (bypass router to avoid any hanging path)
-    if (pathname === "/api/auth/login" && request.method === "POST") {
-      return auth.login({ req: request, env });
-    }
-    if (pathname === "/api/auth/me" && request.method === "GET") {
-      return auth.me({ req: request, env });
-    }
-    if (pathname === "/api/auth/logout" && request.method === "POST") {
-      return auth.logout({ req: request, env });
-    }
-
-    // ---- 2) All other API routes go through itty-router (unchanged behaviour)
-   if (pathname.startsWith("/api/")) {
-    try {
-      // ⬇️ ADD THIS
-      DBG("index.ts: before router.handle", { method: request.method, path: pathname });
-
-      const res = await router.handle(request, env, ctx);
-
-      // ⬇️ ADD THIS
-      DBG("index.ts: after router.handle", {
-        ok: res instanceof Response,
-        status: res instanceof Response ? res.status : undefined,
-      });
-
-      return res;
+    // ---- 3) Other API routes go through itty-router
+    if (pathname.startsWith("/api/")) {
+      try {
+        DBG("index.ts: before router.handle", { method: request.method, path: pathname });
+        const res = await router.handle(request, env, ctx);
+        DBG("index.ts: after router.handle", {
+          ok: res instanceof Response,
+          status: res instanceof Response ? res.status : undefined,
+        });
+        return res;
       } catch (err: any) {
         DBG("index.ts: router.handle threw", err?.message || String(err));
         return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
