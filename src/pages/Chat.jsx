@@ -1,5 +1,5 @@
 // src/pages/Chat.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { streamChat } from "../services/chat";
@@ -24,19 +24,7 @@ export default function Chat() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // While we don't know auth state yet, render nothing (or show a lightweight spinner)
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
-        Loading your session…
-      </div>
-    );
-  }
-
-  // Not signed in? Go to login.
-  if (!user) return <Navigate to="/login" replace />;
-
-  async function onSend(e) {
+  const onSend = useCallback(async (e) => {
     e.preventDefault();
     const content = input.trim();
     if (!content) return;
@@ -54,15 +42,45 @@ export default function Chat() {
       // If you pass model/options, add as the 2nd arg: streamChat(history, { model: 'gpt-4o-mini' })
       for await (const chunk of streamChat(history)) {
         draftRef.current += chunk;
-        setMessages([...history, { role: "assistant", content: draftRef.current }]);
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMsg = newMessages[newMessages.length - 1];
+          if (lastMsg && lastMsg.role === "assistant") {
+            lastMsg.content = draftRef.current;
+          } else {
+            newMessages.push({ role: "assistant", content: draftRef.current });
+          }
+          return newMessages;
+        });
       }
     } catch (err) {
       const fail = (draftRef.current || "") + `\n[error: ${String(err)}]`;
-      setMessages([...history, { role: "assistant", content: fail }]);
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMsg = newMessages[newMessages.length - 1];
+        if (lastMsg && lastMsg.role === "assistant") {
+          lastMsg.content = fail;
+        } else {
+          newMessages.push({ role: "assistant", content: fail });
+        }
+        return newMessages;
+      });
     } finally {
       setWorking(false);
     }
+  }, [messages, input]);
+
+  // While we don't know auth state yet, render nothing (or show a lightweight spinner)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
+        Loading your session…
+      </div>
+    );
   }
+
+  // Not signed in? Go to login.
+  if (!user) return <Navigate to="/login" replace />;
 
   return (
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
