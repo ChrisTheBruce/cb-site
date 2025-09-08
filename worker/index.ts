@@ -1,5 +1,6 @@
 // worker/index.ts
 DBG("worker/index.ts Debug mode on");
+console.log ("worker/index.ts top of file");
 
 //import { handleApi } from "./router";
 
@@ -11,15 +12,23 @@ export { DownloadLog } from "./do/DownloadLog";
 import { router } from "./router";
 import * as auth from "./handlers/auth";
 import { DBG } from "./env";
+import type { Fetcher } from "@cloudflare/workers-types";
 
-
+/*
 export interface Env {
   // Adjust typings to your bindings as needed:
    ASSETS?: Fetcher;
   // DOWNLOADS_DO?: DurableObjectNamespace;
   // SESSION_SECRET?: string;
 }
+*/
 
+export interface Env {
+  OPENAI_API?: string;
+  OPENAI_BASE_URL?: string;
+  DEBUG_MODE?: string;
+  ASSETS?: Fetcher;   // optional
+}
 
 function wantsHtml(req: Request) {
   const accept = req.headers.get("Accept") || "";
