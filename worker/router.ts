@@ -3,8 +3,35 @@
 try { console.log("🐛 [router] module loaded (top)"); } catch {}
 // /worker/router.ts
 import { Router } from 'itty-router';
+import type { Env } from './env';
+import { json } from './lib/responses';
+import { DBG } from './env'; // <- adjust path if DBG is elsewhere
+
+import * as Health from './handlers/health';
+import * as Auth from './handlers/auth';
+import * as Notify from './handlers/notify';
+import * as Chat from './handlers/chat';
+
+
 try { console.log("🐛 [router] module imported (after import)"); } catch {}
 
+// Local helpers (avoid dependency on notFound/methodNotAllowed in lib)
+function notFound(msg = 'Not found') {
+  return new Response(JSON.stringify({ ok: false, error: msg }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function methodNotAllowed(allow: string[]) {
+  return new Response(JSON.stringify({ ok: false, error: 'Method Not Allowed', allow }), {
+    status: 405,
+    headers: {
+      'Content-Type': 'application/json',
+      'Allow': allow.join(', '),
+    },
+  });
+}
 
 // ---- CORS (unchanged)
 export const corsHeaders = {
@@ -71,7 +98,6 @@ router.post('/api/logout/*', (r: Request, e: any) => auth.logout({ req: r, env: 
 import * as chat from './handlers/chat';
 console.log("🐛 [chat] enter handleChat");
 
-/*
 // GET /api/chat  (health + sse self-test live in the handler)
 router.get('/api/chat', async (request: Request, env: any, ctx: any) => {
   console.log("🐛 [router] /api/chat GET entered");
@@ -87,7 +113,7 @@ router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => 
   console.log("🐛 [router] /api/chat/stream POST after handler", res instanceof Response ? res.status : res);
   return res;
 });
-*/
+
 
 // GET /api/chat/stream  (health + sse self-test live in the handler)
 router.get('/api/chat/stream', async (request: Request, env: any, ctx: any) => {
@@ -106,47 +132,13 @@ router.post('/api/chat/stream', async (request: Request, env: any, ctx: any) => 
   return res;
 });
 
-// Accept trailing slash variants for safety
-// router.get('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
-// router.post('/api/chat/*', (r: Request, e: any, c: any) => chat.handleChat(r, e, c));
 
-// ---- 404 fallback (kept)
-router.all('*', (req: Request) => {
-  const p = new URL(req.url).pathname;
-  console.log("🐛 [router] 2nd router.all");
-  return json({ ok: false, error: `No route for ${p}` }, { status: 404 });
-});
+
+// OLD code for reference (not used, but kept for now)
 
 
 
-/*
-// worker/router.ts
-import type { Env } from './env';
-import { json } from './lib/responses';
-import { DBG } from './env'; // <- adjust path if DBG is elsewhere
 
-import * as Health from './handlers/health';
-import * as Auth from './handlers/auth';
-import * as Notify from './handlers/notify';
-import * as Chat from './handlers/chat';
-
-// Local helpers (avoid dependency on notFound/methodNotAllowed in lib)
-function notFound(msg = 'Not found') {
-  return new Response(JSON.stringify({ ok: false, error: msg }), {
-    status: 404,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-function methodNotAllowed(allow: string[]) {
-  return new Response(JSON.stringify({ ok: false, error: 'Method Not Allowed', allow }), {
-    status: 405,
-    headers: {
-      'Content-Type': 'application/json',
-      'Allow': allow.join(', '),
-    },
-  });
-}
 
 // Resolve handler function from namespace imports
 function pickHandler(ns: Record<string, any>, candidates: string[]) {
@@ -224,4 +216,3 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
     return json({ ok: false, error: 'Internal error' }, { status: 500 });
   }
 }
-*/
