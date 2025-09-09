@@ -19,6 +19,15 @@ function DBG(env: Env, ...args: any[]) {
   if (!isDebug(env)) return;
   try { console.log("🐛 [chat]", ...args); } catch {}
 }
+function withTimeout(ms: number) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    try { ctrl.abort(`timeout:${ms}ms` as any); } catch {}
+  }, ms);
+  const cancel = () => { try { clearTimeout(timer); } catch {} };
+  return { signal: ctrl.signal, cancel };
+}
+
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 type InboundBody = {
@@ -31,12 +40,12 @@ type InboundBody = {
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMP = 0.5;
 
-export default async function chat(req: Request, env: Env, ctx: ExecutionContext) {
+export default async function chat(req: Request, env: Env, ctx: any) {
   return handleChat(req, env, ctx);
 }
 
 /** Unified handler: GET → health/SSE self-test; POST → stream via OpenAI. */
-export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext) {
+export async function handleChat(req: Request, env: Env, _ctx: any) {
   const url = new URL(req.url);
   console.log("🐛 [chat] enter handleChat", req.method, url.pathname + url.search);
 
@@ -123,11 +132,21 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     });
 */
 
-    const upstream = await fetch(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
-    });
+    const connectTO = withTimeout(15000);
+    let upstream: Response;
+    try {
+      upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
+        signal: connectTO.signal,
+      });
+    } catch (e: any) {
+      DBG(env, "Upstream fetch error", e?.message || String(e));
+      return json(502, { ok: false, error: `Upstream fetch failed: ${e?.message || String(e)}` }, req);
+    } finally {
+      connectTO.cancel();
+    }
 
     DBG(env, "chat: post-fetch", {
       ok: upstream.ok,
@@ -157,32 +176,52 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     DBG(env, "Begin streaming…");
     let bytes = 0, chunks = 0;
 
+    const IDLE_MS = 20000;
+    let idleTimer: number | ReturnType<typeof setTimeout> | null = null;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer as any);
+      idleTimer = setTimeout(() => {
+        try { reader.cancel("idle-timeout"); } catch {}
+      }, IDLE_MS) as any;
+    };
+
     const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
+      start(controller) {
+        if (body?.mcp && (body.mcp.name || body.mcp.service)) {
+          const name = body.mcp.name || body.mcp.service;
+          DBG(env, "Emit MCP announce", name);
+          controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
+        }
+        resetIdle();
+      },
+      async pull(controller) {
         try {
-          if (body?.mcp && (body.mcp.name || body.mcp.service)) {
-            const name = body.mcp.name || body.mcp.service;
-            DBG(env, "Emit MCP announce", name);
-            controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
+          const { done, value } = await reader.read();
+          if (done) {
+            DBG(env, "Upstream finished", { chunks, bytes });
+            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+            controller.close();
+            return;
           }
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            chunks++; bytes += value?.byteLength || 0;
+          resetIdle();
+          if (value && value.length) {
+            bytes += value.length; chunks += 1;
             if (chunks === 1 || chunks % 20 === 0) DBG(env, "stream chunk", { chunks, bytes });
             controller.enqueue(value);
           }
-          DBG(env, "Upstream finished", { chunks, bytes });
         } catch (e: any) {
-          DBG(env, "Streaming error", e?.message || String(e));
-          controller.enqueue(encoder.encode(
-            `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
-          ));
-        } finally {
-          DBG(env, "Emit [DONE] and close");
+          const msg = e?.message || String(e);
+          DBG(env, "Streaming error (pull)", msg);
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: msg })}\n\n`));
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
+      },
+
+      cancel(reason) {
+        try { if (idleTimer) clearTimeout(idleTimer as any); } catch {}
+        DBG(env, "Stream canceled", reason || "(no reason)");
+        try { reader.cancel(reason || "client-canceled"); } catch {}
       },
     });
 
@@ -203,7 +242,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
 }
 
 /** Back-compat explicit stream entry (works for both GET test and POST chat). */
-export async function handleChatStream(req: Request, env: Env, ctx: ExecutionContext) {
+export async function handleChatStream(req: Request, env: Env, ctx: any) {
   // Reuse the same logic; the route is just a different path.
   return handleChat(req, env, ctx);
 }
