@@ -18,7 +18,6 @@ import { AuthProvider } from "@/hooks/useAuth";
     const w = /** @type {any} */ (window);
     if (w.__DEBUG__ === undefined) w.__DEBUG__ = on;
     if (w.__DEBUG__) {
-      // eslint-disable-next-line no-console
       console.debug("[boot] __DEBUG__ enabled via VITE_DEBUG_MODE");
     }
   } catch {
@@ -52,7 +51,6 @@ class ErrorBoundary extends React.Component {
   }
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
     console.error("App error boundary caught:", error, info);
   }
   render() {
