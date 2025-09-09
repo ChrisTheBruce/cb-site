@@ -30,6 +30,14 @@ function cookieDomainFor(req: Request): string | null {
     return null;
   }
 
+  const origin = req.headers.get("Origin") || "";
+  const referer = req.headers.get("Referer") || "";
+  
+  if (origin.includes("localhost") || referer.includes("localhost")) {
+    console.log("🔧 Development mode detected via headers - using null domain for localhost");
+    return null;
+  }
+
   const userAgent = req.headers.get("User-Agent") || "";
   const isLocalDev = userAgent.includes("Mozilla") && req.url.includes("chrisbrighouse.com");
   
@@ -59,10 +67,16 @@ function setCookieHeader(name: string, value: string, maxAgeSec: number, domain:
   const attrs = [
     `Path=/`,
     `HttpOnly`,
-    `SameSite=Lax`,
     `Max-Age=${maxAgeSec}`,
   ];
-  if (isSecure) attrs.push(`Secure`);
+  
+  if (isSecure) {
+    attrs.push(`SameSite=None`);
+    attrs.push(`Secure`);
+  } else {
+    attrs.push(`SameSite=Lax`);
+  }
+  
   if (domain) attrs.push(`Domain=${domain}`);
   return `${name}=${value}; ${attrs.join("; ")}`;
 }
@@ -124,13 +138,14 @@ export async function login({ req }: Ctx): Promise<Response> {
       return json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
+    console.log("✅ Valid credentials - creating session");
+
     // Simple, robust session value (no HMAC to avoid subtle crypto issues)
     const session = `s:${crypto.randomUUID()}.${Date.now()}`;
     const domain = cookieDomainFor(req);
     const cookieHeader = setCookieHeader(COOKIE_NAME, encodeURIComponent(session), COOKIE_MAX_AGE, domain, req);
     
     console.log("✅ Login successful, setting cookie:", { domain, cookieHeader });
-
     return json(
       { ok: true, user: { id: "chris", email: "chris@chrisbrighouse.com", name: "chris" } },
       {

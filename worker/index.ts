@@ -42,7 +42,6 @@ function wantsHtml(req: Request) {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const t0 = Date.now();
     const { pathname } = url;
 
     console.log("📩 entering fetch, about to call router.handle");
@@ -89,7 +88,7 @@ export default {
       }
     }
 
-    // ---- 3) Static assets + SPA fallback (unchanged)
+    // ---- 2) Static assets + SPA fallback (unchanged)
     if (env.ASSETS) {
       // try the exact asset
       let res = await env.ASSETS.fetch(request);
