@@ -11,6 +11,7 @@ import Contact from "./components/Contact.tsx";
 import HomeHero from "./components/HomeHero/HomeHero.tsx";
 import Login from "./pages/Login.jsx";
 import Chat from "./pages/Chat.jsx";
+import Chat2 from "./pages/Chat2.jsx";
 
 // New page:
 import AdminDownloads from "./pages/AdminDownloads.tsx";
@@ -62,6 +63,7 @@ export default function App() {
           {/* Auth / chat */}
           <Route path="/login" element={<Login />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/chat2" element={<Chat2 />} />
 
           {/* Admin logs (backend enforces auth) */}
           <Route path="/admin/downloads" element={<AdminDownloads />} />
