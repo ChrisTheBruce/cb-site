@@ -5,7 +5,7 @@ import DownloadButton from "./DownloadButton";
 // Use <DownloadLink filename="file.pdf">Label</DownloadLink>
 export default function DownloadLink({ href, children, ...rest }) {
   // Extract filename from href (strip /assets/ if present)
-  const filename = href.replace(/^\\/?assets\\//, "").replace(/^\\//, "");
+  const filename = href.replace(/^\/?assets\//, "").replace(/^\//, "");
 
   return (
     <DownloadButton filename={filename} {...rest}>

@@ -1,12 +1,9 @@
-// src/auth/ProtectedRoute.tsx
-import { ReactNode, useEffect, useState } from 'react';
+// src/auth/ProtectedRoute.jsx
+import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-type MeOk = { authenticated: true; username: string };
-type MeNo = { authenticated: false };
-
-export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<'loading'|'authed'|'anon'>('loading');
+export default function ProtectedRoute({ children }) {
+  const [state, setState] = useState('loading');
   const location = useLocation();
 
   useEffect(() => {
@@ -17,7 +14,7 @@ export default function ProtectedRoute({ children }: { children: ReactNode }) {
         if (cancelled) return;
 
         if (res.status === 200) {
-          const me = (await res.json()) as MeOk | MeNo;
+          const me = await res.json();
           if ('authenticated' in me && me.authenticated) setState('authed');
           else setState('anon');
         } else if (res.status === 401) {

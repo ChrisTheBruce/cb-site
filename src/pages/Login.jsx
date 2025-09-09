@@ -33,7 +33,7 @@ export default function Login() {
       }
       // Success -> go to Chat
       navigate("/chat", { replace: true });
-    } catch (err) {
+    } catch {
       setError("Network error. Please try again.");
     } finally {
       setSubmitting(false);
