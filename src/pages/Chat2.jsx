@@ -6,13 +6,6 @@ import { streamChat2 } from "../services/chat2";
 export default function Chat2() {
   const { user, loading, refresh } = useAuth();
   
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isPopup = urlParams.get('popup') === 'true';
-    if (isPopup) {
-      window.history.replaceState({}, '', '/chat2');
-    }
-  }, []);
   
   const [messages, setMessages] = useState([
     { role: "system", content: "You are a helpful assistant." },
@@ -84,9 +77,6 @@ export default function Chat2() {
     }
   }, [messages, input, working]);
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const isPopup = urlParams.get('popup') === 'true';
-
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", fontSize: 14, opacity: 0.8 }}>
@@ -95,7 +85,7 @@ export default function Chat2() {
     );
   }
 
-  if (!user && !isPopup) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>

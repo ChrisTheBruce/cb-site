@@ -99,7 +99,7 @@ export default function Chat() {
         <h1 className="text-2xl font-bold">Chat</h1>
         <button
           onClick={() => {
-            window.open('/chat2?popup=true', '_blank', 'width=1000,height=700');
+            window.location.href = '/chat2';
           }}
           style={{
             padding: "8px 16px",
