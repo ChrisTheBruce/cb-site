@@ -85,7 +85,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const apiKey = getApiKey(env);
     if (!apiKey) {
       DBG(env, "OPENAI_API missing");
-      return json(500, { ok: false, error: "OPENAI_API secret not configured" }, req);
+      return json(401, { ok: false, error: "OPENAI_API secret not configured" }, req);
     }
 
     const model = body.model || DEFAULT_MODEL;
@@ -208,7 +208,12 @@ function getApiKey(env: Env): string | null {
   return env.OPENAI_API?.trim?.() || env.OPENAI_API_KEY?.trim?.() || null;
 }
 function getBaseUrl(env: Env): string {
-  let base = (env.OPENAI_BASE_URL || "").trim();
+  let base =
+    (env as any)?.AI_GATEWAY_BASE?.toString?.().trim?.() ||
+    env.OPENAI_BASE_URL?.toString?.().trim?.() ||
+    (env as any)?.OPENAI_BASE?.toString?.().trim?.() ||
+    "";
+
   if (base) {
     base = base.replace(/\/+$/, "");
     if (!/\/openai$/.test(base)) base = `${base}/openai`;
