@@ -38,21 +38,32 @@ export default function Chat() {
     setWorking(true);
 
     try {
-      // Stream assistant tokens as they arrive
-      // If you pass model/options, add as the 2nd arg: streamChat(history, { model: 'gpt-4o-mini' })
-      for await (const chunk of streamChat(history)) {
-        draftRef.current += chunk;
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMsg = newMessages[newMessages.length - 1];
-          if (lastMsg && lastMsg.role === "assistant") {
-            lastMsg.content = draftRef.current;
-          } else {
-            newMessages.push({ role: "assistant", content: draftRef.current });
-          }
-          return newMessages;
-        });
-      }
+      await streamChat({
+        messages: history,
+        onMcp: (info) => {
+          setMessages(prev => {
+            const copy = prev.slice();
+            const insertAt = Math.max(0, copy.length - (copy[copy.length - 1]?.role === "assistant" ? 1 : 0));
+            const svc = info?.service || "MCP service";
+            const tool = info?.tool ? ` (${info.tool})` : "";
+            copy.splice(insertAt, 0, { role: "assistant", content: `MCP: ${svc}${tool}` });
+            return copy;
+          });
+        },
+        onToken: (chunk) => {
+          draftRef.current += chunk;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg && lastMsg.role === "assistant") {
+              lastMsg.content = draftRef.current;
+            } else {
+              newMessages.push({ role: "assistant", content: draftRef.current });
+            }
+            return newMessages;
+          });
+        },
+      });
     } catch (err) {
       const fail = (draftRef.current || "") + `\n[error: ${String(err)}]`;
       setMessages(prev => {
