@@ -99,9 +99,7 @@ export default function Chat() {
         <h1 className="text-2xl font-bold">Chat</h1>
         <button
           onClick={() => {
-            const authToken = document.cookie.match(/cb_session=([^;]+)/)?.[1];
-            const url = authToken ? `/chat2?auth=${encodeURIComponent(authToken)}` : '/chat2';
-            window.open(url, '_blank', 'width=1000,height=700');
+            window.open('/chat2?popup=true', '_blank', 'width=1000,height=700');
           }}
           style={{
             padding: "8px 16px",

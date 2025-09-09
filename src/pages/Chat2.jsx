@@ -8,12 +8,11 @@ export default function Chat2() {
   
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const authToken = urlParams.get('auth');
-    if (authToken && !user) {
+    const isPopup = urlParams.get('popup') === 'true';
+    if (isPopup) {
       window.history.replaceState({}, '', '/chat2');
-      refresh();
     }
-  }, [user, refresh]);
+  }, []);
   
   const [messages, setMessages] = useState([
     { role: "system", content: "You are a helpful assistant." },
@@ -85,6 +84,9 @@ export default function Chat2() {
     }
   }, [messages, input, working]);
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPopup = urlParams.get('popup') === 'true';
+
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", fontSize: 14, opacity: 0.8 }}>
@@ -93,7 +95,7 @@ export default function Chat2() {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user && !isPopup) return <Navigate to="/login" replace />;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
