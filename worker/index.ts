@@ -78,6 +78,11 @@ export default {
           ok: res instanceof Response,
           status: res instanceof Response ? res.status : undefined,
         });
+        if (res instanceof Response) {
+          const headers = new Headers(res.headers);
+          headers.set("x-build", "chat-debug-r1");
+          return new Response(res.body, { status: res.status, headers });
+        }
         return res;
       } catch (err: any) {
         DBG("index.ts: router.handle threw", err?.message || String(err));
