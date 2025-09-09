@@ -7,16 +7,13 @@ export default function Chat2() {
   const { user, loading, refresh } = useAuth();
   
   useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'AUTH_SYNC' && event.data?.authenticated) {
-        refresh();
-      }
-    };
-    
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [refresh]);
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('auth');
+    if (authToken && !user) {
+      window.history.replaceState({}, '', '/chat2');
+      refresh();
+    }
+  }, [user, refresh]);
   
   const [messages, setMessages] = useState([
     { role: "system", content: "You are a helpful assistant." },

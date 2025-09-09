@@ -99,21 +99,9 @@ export default function Chat() {
         <h1 className="text-2xl font-bold">Chat</h1>
         <button
           onClick={() => {
-            const popup = window.open('/chat2', '_blank', 'width=1000,height=700');
-            if (popup) {
-              const checkReady = () => {
-                try {
-                  if (popup.document && popup.document.readyState === 'complete') {
-                    popup.postMessage({ type: 'AUTH_SYNC', authenticated: true }, window.location.origin);
-                  } else {
-                    setTimeout(checkReady, 100);
-                  }
-                } catch (e) {
-                  setTimeout(checkReady, 100);
-                }
-              };
-              setTimeout(checkReady, 500);
-            }
+            const authToken = document.cookie.match(/cb_session=([^;]+)/)?.[1];
+            const url = authToken ? `/chat2?auth=${encodeURIComponent(authToken)}` : '/chat2';
+            window.open(url, '_blank', 'width=1000,height=700');
           }}
           style={{
             padding: "8px 16px",
