@@ -7,8 +7,17 @@ import * as Notify from "./handlers/notify";
 type H = (req: Request, env: any, ctx: ExecutionContext) => Promise<Response> | Response;
 
 const pick = (mod: any, names: string[]): H => {
-  for (const n of names) if (typeof mod?.[n] === "function") return mod[n] as H;
-  if (typeof mod?.default === "function") return mod.default as H;
+  for (const n of names) {
+    if (typeof mod?.[n] === "function") {
+      try { console.log(`[router] picked Chat handler: ${n}`); } catch {}
+      return mod[n] as H;
+    }
+  }
+  if (typeof mod?.default === "function") {
+    try { console.log(`[router] picked Chat handler: default`); } catch {}
+    return mod.default as H;
+  }
+  try { console.log(`[router] no Chat handler export matched`); } catch {}
   return () =>
     new Response(JSON.stringify({ ok: false, error: "handler not found" }), {
       status: 501,
@@ -95,7 +104,7 @@ router.post(
 );
 
 // ---------- CHAT (uses your existing Cloudflare AI Gateway code) ----------
-const chatStream = pick(Chat, ["stream", "chatStream", "chatStreamHandler"]);
+const chatStream = pick(Chat, ["handleChatStream", "handleChat", "stream", "chatStream", "chatStreamHandler"]);
 router.post(
   "/api/chat/stream",
   trace("chat.stream", async (req, env, ctx) => withCORS(await chatStream(req, env, ctx)))
