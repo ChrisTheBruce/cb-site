@@ -99,11 +99,11 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const baseHost = (() => {
       try { return new URL(baseUrl).host; } catch { return "(bad baseUrl)"; }
     })();
-    DBG("chat: pre-fetch", { reqHost, baseHost, baseUrl, upstreamUrl });
+    DBG(env, "chat: pre-fetch", { reqHost, baseHost, baseUrl, upstreamUrl });
 
     // OPTIONAL: log request headers you send upstream (helps spot loops)
     const loopMarker = crypto.randomUUID();
-    DBG("chat: add X-Loop-Trace", loopMarker);
+    DBG(env, "chat: add X-Loop-Trace", loopMarker);
     const headers = {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -111,7 +111,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     };
 
 
-    DBG("Upstream config", { baseUrl, upstreamUrl, model, temperature, mcp: body?.mcp });
+    DBG(env, "Upstream config", { baseUrl, upstreamUrl, model, temperature, mcp: body?.mcp });
 /* old
     const upstream = await fetch(upstreamUrl, {
       method: "POST",
@@ -138,18 +138,23 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
 
 
     if (!upstream.ok || !upstream.body) {
-      const errText = await safeText(upstream);
-      DBG("Upstream error payload", errText?.slice(0, 400));
-      return json(upstream.status || 502, {
-        ok: false,
-        error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}`,
-      }, req);
+      const raw = (await safeText(upstream)).slice(0, 1000);
+      const ctype = upstream.headers.get("content-type") || "";
+      DBG(env, "Upstream error payload", raw?.slice(0, 400));
+      let msg = raw;
+      if (ctype.includes("application/json")) {
+        try {
+          const j = JSON.parse(raw);
+          msg = j?.error?.message || j?.message || j?.error || JSON.stringify(j);
+        } catch {}
+      }
+      return json(upstream.status || 502, { ok: false, error: msg }, req);
     }
 
     const encoder = new TextEncoder();
     const reader = upstream.body.getReader();
 
-    DBG("Begin streaming…");
+    DBG(env, "Begin streaming…");
     let bytes = 0, chunks = 0;
 
     const stream = new ReadableStream<Uint8Array>({
@@ -167,14 +172,14 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
             if (chunks === 1 || chunks % 20 === 0) DBG(env, "stream chunk", { chunks, bytes });
             controller.enqueue(value);
           }
-          DBG("Upstream finished", { chunks, bytes });
+          DBG(env, "Upstream finished", { chunks, bytes });
         } catch (e: any) {
-          DBG("Streaming error", e?.message || String(e));
+          DBG(env, "Streaming error", e?.message || String(e));
           controller.enqueue(encoder.encode(
             `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
           ));
         } finally {
-          DBG("Emit [DONE] and close");
+          DBG(env, "Emit [DONE] and close");
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
@@ -192,7 +197,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     });
 
   } catch (e: any) {
-    DBG("Outer catch", e?.message || String(e));
+    DBG(env, "Outer catch", e?.message || String(e));
     return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req);
   }
 }
@@ -216,7 +221,13 @@ function getBaseUrl(env: Env): string {
 
   if (base) {
     base = base.replace(/\/+$/, "");
-    if (!/\/openai$/.test(base)) base = `${base}/openai`;
+    const lower = base.toLowerCase();
+    const isGateway =
+      lower.includes("gateway.ai.cloudflare.com") ||
+      /\/cb-openai(\/|$)/.test(lower);
+    if (!isGateway && !/\/openai$/.test(base)) {
+      base = `${base}/openai`;
+    }
     return base;
   }
   return "https://api.openai.com/v1";
