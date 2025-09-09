@@ -11,7 +11,7 @@ export { DownloadLog } from "./do/DownloadLog";
 // Add these:
 import { router } from "./router";
 import * as auth from "./handlers/auth";
-import { DBG } from "./env";
+import { DBG, setDBGEnv } from "./env";
 import type { Fetcher } from "@cloudflare/workers-types";
 
 /*
@@ -41,6 +41,8 @@ function wantsHtml(req: Request) {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    setDBGEnv(env);
+    
     const url = new URL(request.url);
     const { pathname } = url;
 
