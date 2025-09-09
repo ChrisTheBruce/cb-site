@@ -1,9 +1,11 @@
 // src/pages/Login.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -31,7 +33,8 @@ export default function Login() {
         }
         return;
       }
-      // Success -> go to Chat
+      // Success -> refresh auth state then go to Chat
+      await refresh();
       navigate("/chat", { replace: true });
     } catch {
       setError("Network error. Please try again.");

@@ -59,7 +59,6 @@ router.options("/api/auth/*", preflight);
 router.options("/api/chat/*", preflight);
 
 // ---------- AUTH ----------
-const authLogin = pick(Auth, ["login", "authLogin", "authLoginHandler", "handleLogin"]);
 router.post(
   "/api/auth/login",
   trace("auth.login", async (req, env, ctx) => {
@@ -71,17 +70,16 @@ router.post(
         })
       );
     }
-    const res = await authLogin(req, env, ctx);
+    const res = await Auth.login({ req, env });
     return withCORS(res);
   })
 );
 
 // NEW: explicit /api/auth/me route (your UI calls this)
-const authMe = pick(Auth, ["me", "authMe", "authMeHandler", "handleMe", "getMe"]);
 router.get(
   "/api/auth/me",
   trace("auth.me", async (req, env, ctx) => {
-    const res = await authMe(req, env, ctx);
+    const res = await Auth.me({ req, env });
     return withCORS(res);
   })
 );
