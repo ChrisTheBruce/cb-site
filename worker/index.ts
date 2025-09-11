@@ -1,6 +1,5 @@
 // worker/index.ts
-DBG("worker/index.ts Debug mode on");
-console.log ("worker/index.ts top of file");
+// Note: avoid calling functions before imports are loaded to prevent init-time errors.
 
 //import { handleApi } from "./router";
 
@@ -206,4 +205,3 @@ export default {
 };
 
 */
-
