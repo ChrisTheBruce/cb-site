@@ -49,14 +49,19 @@ const ALLOWED_ORIGINS = new Set([
   "https://chrisbrighouse.com",
 ]);
 const withCORS = (req: Request, res: Response): Response => {
-  const origin = req.headers.get("Origin") || "";
-  const headers = new Headers(res.headers);
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Vary", "Origin");
-    headers.set("Access-Control-Allow-Credentials", "true");
+  try {
+    const origin = req.headers.get("Origin") || "";
+    const headers = new Headers(res.headers);
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Vary", "Origin");
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+    return new Response(res.body, { status: res.status, headers });
+  } catch (e: any) {
+    try { console.error("withCORS error:", e?.message || String(e)); } catch {}
+    return res; // Fall back to original response on any error
   }
-  return new Response(res.body, { status: res.status, headers });
 };
 
 const preflight: H = async (req) => {
@@ -96,8 +101,8 @@ router.post(
         })
       );
     }
-    const res = await Auth.login({ req, env });
-    return withCORS(req, res);
+    // Same-origin form POST; avoid CORS wrapper to minimize Set-Cookie edge cases
+    return await Auth.login({ req, env });
   })
 );
 
