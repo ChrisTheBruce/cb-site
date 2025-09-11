@@ -5,18 +5,32 @@ export type StreamOptions = {
   temperature?: number;
   signal?: AbortSignal;
   mcp?: { name?: string; service?: string; [k: string]: unknown };
+  onMcp?: (info: { name?: string; service?: string; tool?: string }) => void;
+  onToken?: (chunk: string) => void;
 };
 
 const CHAT_PATH =
   (typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_CHAT_PATH) ||
-  "/api/chat/stream"; // default to the explicit stream route
+  "/api/chat/stream";
 
-export async function* streamChat(
-  messages: ChatMessage[],
-  opts: StreamOptions = {}
-): AsyncGenerator<string, void, unknown> {
-  const model = opts.model ?? "gpt-4o-mini";
-  const temperature = opts.temperature ?? 0.5;
+export async function streamChat(opts: {
+  messages: ChatMessage[];
+  model?: string;
+  temperature?: number;
+  signal?: AbortSignal;
+  mcp?: { name?: string; service?: string; [k: string]: unknown } | null;
+  onMcp?: (info: { name?: string; service?: string; tool?: string }) => void;
+  onToken?: (chunk: string) => void;
+}): Promise<void> {
+  const {
+    messages,
+    model = "gpt-4o-mini",
+    temperature = 0.5,
+    signal,
+    mcp = null,
+    onMcp,
+    onToken,
+  } = opts;
 
   const resp = await fetch(CHAT_PATH, {
     method: "POST",
@@ -24,8 +38,8 @@ export async function* streamChat(
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ messages, model, temperature, mcp: opts.mcp ?? null }),
-    signal: opts.signal,
+    body: JSON.stringify({ messages, model, temperature, mcp }),
+    signal,
   });
 
   if (!resp.ok) {
@@ -74,10 +88,9 @@ export async function* streamChat(
         if (currentEvent === "mcp") {
           try {
             const m = JSON.parse(data);
-            const name = m?.name ?? m?.service ?? "connected";
-            yield `MCP: ${name}\n`;
+            onMcp?.({ name: m?.name, service: m?.service, tool: m?.tool });
           } catch {
-            if (data) yield `MCP: ${data}\n`;
+            onMcp?.({ service: data });
           }
           continue;
         }
@@ -88,9 +101,9 @@ export async function* streamChat(
             j?.choices?.[0]?.delta?.content ??
             j?.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments ??
             "";
-          if (delta) yield delta;
+          if (delta) onToken?.(delta);
         } catch {
-          if (data && !data.startsWith("{")) yield data;
+          if (data && !data.startsWith("{")) onToken?.(data);
         }
       }
     }

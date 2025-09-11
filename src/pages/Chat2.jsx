@@ -1,25 +1,21 @@
-// src/pages/Chat.jsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { streamChat } from "../services/chat";
+import { streamChat2 } from "../services/chat2";
 
-export default function Chat() {
-  // ---- Auth guard inside the component ----
+export default function Chat2() {
   const { user, loading } = useAuth();
-
-  // Chat state
+  
   const [messages, setMessages] = useState([
     { role: "system", content: "You are a helpful assistant." },
   ]);
   const [input, setInput] = useState("");
   const [working, setWorking] = useState(false);
-
-  // Streaming helpers
+  
   const draftRef = useRef("");
   const endRef = useRef(null);
+  const abortRef = useRef(null);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -27,7 +23,7 @@ export default function Chat() {
   const onSend = useCallback(async (e) => {
     e.preventDefault();
     const content = input.trim();
-    if (!content) return;
+    if (!content || working) return;
 
     const userMsg = { role: "user", content };
     const history = [...messages, userMsg];
@@ -37,19 +33,15 @@ export default function Chat() {
     draftRef.current = "";
     setWorking(true);
 
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    abortRef.current = new AbortController();
+
     try {
-      await streamChat({
+      await streamChat2({
         messages: history,
-        onMcp: (info) => {
-          setMessages(prev => {
-            const copy = prev.slice();
-            const insertAt = Math.max(0, copy.length - (copy[copy.length - 1]?.role === "assistant" ? 1 : 0));
-            const svc = info?.service || "MCP service";
-            const tool = info?.tool ? ` (${info.tool})` : "";
-            copy.splice(insertAt, 0, { role: "assistant", content: `MCP: ${svc}${tool}` });
-            return copy;
-          });
-        },
+        signal: abortRef.current.signal,
         onToken: (chunk) => {
           draftRef.current += chunk;
           setMessages(prev => {
@@ -63,58 +55,42 @@ export default function Chat() {
             return newMessages;
           });
         },
+        onError: (error) => {
+          const errorContent = (draftRef.current || "") + `\n[error: ${error}]`;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg && lastMsg.role === "assistant") {
+              lastMsg.content = errorContent;
+            } else {
+              newMessages.push({ role: "assistant", content: errorContent });
+            }
+            return newMessages;
+          });
+        },
       });
     } catch (err) {
-      const fail = (draftRef.current || "") + `\n[error: ${String(err)}]`;
-      setMessages(prev => {
-        const newMessages = [...prev];
-        const lastMsg = newMessages[newMessages.length - 1];
-        if (lastMsg && lastMsg.role === "assistant") {
-          lastMsg.content = fail;
-        } else {
-          newMessages.push({ role: "assistant", content: fail });
-        }
-        return newMessages;
-      });
     } finally {
       setWorking(false);
+      abortRef.current = null;
     }
-  }, [messages, input]);
+  }, [messages, input, working]);
 
-  // While we don't know auth state yet, render nothing (or show a lightweight spinner)
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", fontSize: 14, opacity: 0.8 }}>
         Loading your session…
       </div>
     );
   }
 
-  // Not signed in? Go to login.
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <h1 className="text-2xl font-bold">Chat</h1>
-        <button
-          onClick={() => window.open('/chat2', '_blank', 'width=1000,height=700')}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "1px solid #0b5cff",
-            background: "#0b5cff",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 14,
-          }}
-        >
-          Try Chat2
-        </button>
-      </div>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
+      <h1 style={{ fontSize: 24, fontWeight: "bold", marginBottom: 12 }}>Chat2</h1>
 
       <div
-        className="transcript"
         style={{
           border: "1px solid #ddd",
           borderRadius: 8,
@@ -130,7 +106,6 @@ export default function Chat() {
           .map((m, i) => (
             <div
               key={i}
-              className={`msg ${m.role}`}
               style={{
                 whiteSpace: "pre-wrap",
                 padding: "8px 10px",
@@ -146,7 +121,7 @@ export default function Chat() {
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={onSend} className="composer" style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <form onSubmit={onSend} style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}

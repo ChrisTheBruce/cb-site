@@ -23,7 +23,11 @@ export function requireValidEmail(email) {
 
 export function setEmail(email) {
   if (!email) return;
-  try { localStorage.setItem(KEY, email); } catch {}
+  try { 
+    localStorage.setItem(KEY, email); 
+  } catch {
+    // localStorage not available, continue with cookie only
+  }
   document.cookie = `cb_email=${encodeURIComponent(email)}; Max-Age=31536000; Path=/; SameSite=Lax; Secure`;
   window.dispatchEvent(new CustomEvent(EVENT, { detail: email }));
 }

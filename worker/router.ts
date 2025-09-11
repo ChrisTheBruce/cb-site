@@ -8,8 +8,17 @@ import { clearDownloadEmailCookie, setDownloadEmailCookie } from "./handlers/ema
 type H = (req: Request, env: any, ctx: ExecutionContext) => Promise<Response> | Response;
 
 const pick = (mod: any, names: string[]): H => {
-  for (const n of names) if (typeof mod?.[n] === "function") return mod[n] as H;
-  if (typeof mod?.default === "function") return mod.default as H;
+  for (const n of names) {
+    if (typeof mod?.[n] === "function") {
+      try { console.log(`[router] picked Chat handler: ${n}`); } catch {}
+      return mod[n] as H;
+    }
+  }
+  if (typeof mod?.default === "function") {
+    try { console.log(`[router] picked Chat handler: default`); } catch {}
+    return mod.default as H;
+  }
+  try { console.log(`[router] no Chat handler export matched`); } catch {}
   return () =>
     new Response(JSON.stringify({ ok: false, error: "handler not found" }), {
       status: 501,
@@ -49,16 +58,19 @@ const withCORS = (req: Request, res: Response): Response => {
   return new Response(res.body, { status: res.status, headers });
 };
 
-const preflight: H = async () =>
-  new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "https://www.chrisbrighouse.com",
-      "Access-Control-Allow-Headers": "content-type, authorization, x-diag-skip-auth",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Max-Age": "600",
-    },
-  });
+const preflight: H = async (req) => {
+  const origin = req.headers.get("Origin") || "";
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers": "content-type, authorization, accept, x-diag-skip-auth",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Max-Age": "600",
+  };
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  }
+  return new Response(null, { status: 204, headers });
+};
 
 const router = Router();
 
@@ -70,7 +82,6 @@ router.options("/api/notify/*", preflight);
 router.options("/api/download-notify", preflight);
 
 // ---------- AUTH ----------
-const authLogin = pick(Auth, ["login", "authLogin", "authLoginHandler", "handleLogin"]);
 router.post(
   "/api/auth/login",
   trace("auth.login", async (req, env, ctx) => {
@@ -83,17 +94,16 @@ router.post(
         })
       );
     }
-    const res = await authLogin(req, env, ctx);
+    const res = await Auth.login({ req, env });
     return withCORS(req, res);
   })
 );
 
 // NEW: explicit /api/auth/me route (your UI calls this)
-const authMe = pick(Auth, ["me", "authMe", "authMeHandler", "handleMe", "getMe"]);
 router.get(
   "/api/auth/me",
   trace("auth.me", async (req, env, ctx) => {
-    const res = await authMe(req, env, ctx);
+    const res = await Auth.me({ req, env });
     return withCORS(req, res);
   })
 );
@@ -108,8 +118,28 @@ router.post(
   )
 );
 
+// Logout
+router.post(
+  "/api/auth/logout",
+  trace("auth.logout", async (req, env, ctx) => withCORS(req, await Auth.logout({ req, env })))
+);
+
+// Back-compat aliases (/api/login, /api/me, /api/logout)
+router.post(
+  "/api/login",
+  trace("auth.login.alias", async (req, env, ctx) => withCORS(req, await Auth.login({ req, env })))
+);
+router.get(
+  "/api/me",
+  trace("auth.me.alias", async (req, env, ctx) => withCORS(req, await Auth.me({ req, env })))
+);
+router.post(
+  "/api/logout",
+  trace("auth.logout.alias", async (req, env, ctx) => withCORS(req, await Auth.logout({ req, env })))
+);
+
 // ---------- CHAT (uses your existing Cloudflare AI Gateway code) ----------
-const chatStream = pick(Chat, ["stream", "chatStream", "chatStreamHandler"]);
+const chatStream = pick(Chat, ["handleChatStream", "handleChat", "stream", "chatStream", "chatStreamHandler"]);
 // Allow both GET (for ?ping and ?test=sse diagnostics) and POST (normal chat)
 router.get(
   "/api/chat/stream",
@@ -155,10 +185,16 @@ router.post(
 );
 
 // ---------- NOTIFY ----------
-const notifyDownload = pick(Notify, ["notify", "download", "notifyDownload"]);
-router.post("/api/notify/download", trace("notify.download", notifyDownload));
+const notifyDownload = pick(Notify, ["handleDownloadNotify", "notify", "download", "notifyDownload"]);
+router.post(
+  "/api/notify/download",
+  trace("notify.download", async (req, env, ctx) => withCORS(req, await notifyDownload(req, env, ctx)))
+);
 // Alias for legacy/default client endpoint name
-router.post("/api/download-notify", trace("notify.download.alias", notifyDownload));
+router.post(
+  "/api/download-notify",
+  trace("notify.download.alias", async (req, env, ctx) => withCORS(req, await notifyDownload(req, env, ctx)))
+);
 
 // ---------- EMAIL (downloads cookie) ----------
 router.post(

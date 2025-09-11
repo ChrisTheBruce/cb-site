@@ -22,6 +22,15 @@ function DBG(env: Env, ...args: any[]) {
   if (!isDebug(env)) return;
   try { console.log("🐛 [chat]", ...args); } catch {}
 }
+function withTimeout(ms: number) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    try { ctrl.abort(`timeout:${ms}ms` as any); } catch {}
+  }, ms);
+  const cancel = () => { try { clearTimeout(timer); } catch {} };
+  return { signal: ctrl.signal, cancel };
+}
+
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 type InboundBody = {
@@ -34,12 +43,12 @@ type InboundBody = {
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMP = 0.5;
 
-export default async function chat(req: Request, env: Env, ctx: ExecutionContext) {
+export default async function chat(req: Request, env: Env, ctx: any) {
   return handleChat(req, env, ctx);
 }
 
 /** Unified handler: GET → health/SSE self-test; POST → stream via OpenAI. */
-export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext) {
+export async function handleChat(req: Request, env: Env, _ctx: any) {
   const url = new URL(req.url);
   console.log("🐛 [chat] enter handleChat", req.method, url.pathname + url.search);
 
@@ -88,7 +97,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const apiKey = getApiKey(env);
     if (!apiKey) {
       DBG(env, "OPENAI_API missing");
-      return json(500, { ok: false, error: "OPENAI_API secret not configured" }, req);
+      return json(401, { ok: false, error: "OPENAI_API secret not configured" }, req);
     }
 
     const model = body.model || DEFAULT_MODEL;
@@ -102,11 +111,11 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     const baseHost = (() => {
       try { return new URL(baseUrl).host; } catch { return "(bad baseUrl)"; }
     })();
-    DBG("chat: pre-fetch", { reqHost, baseHost, baseUrl, upstreamUrl });
+    DBG(env, "chat: pre-fetch", { reqHost, baseHost, baseUrl, upstreamUrl });
 
     // OPTIONAL: log request headers you send upstream (helps spot loops)
     const loopMarker = crypto.randomUUID();
-    DBG("chat: add X-Loop-Trace", loopMarker);
+    DBG(env, "chat: add X-Loop-Trace", loopMarker);
     const headers = {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -114,7 +123,7 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     };
 
 
-    DBG("Upstream config", { baseUrl, upstreamUrl, model, temperature, mcp: body?.mcp });
+    DBG(env, "Upstream config", { baseUrl, upstreamUrl, model, temperature, mcp: body?.mcp });
 /* old
     const upstream = await fetch(upstreamUrl, {
       method: "POST",
@@ -126,11 +135,21 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     });
 */
 
-    const upstream = await fetch(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
-    });
+    const connectTO = withTimeout(15000);
+    let upstream: Response;
+    try {
+      upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
+        signal: connectTO.signal,
+      });
+    } catch (e: any) {
+      DBG(env, "Upstream fetch error", e?.message || String(e));
+      return json(502, { ok: false, error: `Upstream fetch failed: ${e?.message || String(e)}` }, req);
+    } finally {
+      connectTO.cancel();
+    }
 
     DBG(env, "chat: post-fetch", {
       ok: upstream.ok,
@@ -141,46 +160,71 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
 
 
     if (!upstream.ok || !upstream.body) {
-      const errText = await safeText(upstream);
-      DBG("Upstream error payload", errText?.slice(0, 400));
-      return json(upstream.status || 502, {
-        ok: false,
-        error: `Upstream error ${upstream.status}: ${errText.slice(0, 800)}`,
-      }, req);
+      const raw = (await safeText(upstream)).slice(0, 1000);
+      const ctype = upstream.headers.get("content-type") || "";
+      DBG(env, "Upstream error payload", raw?.slice(0, 400));
+      let msg = raw;
+      if (ctype.includes("application/json")) {
+        try {
+          const j = JSON.parse(raw);
+          msg = j?.error?.message || j?.message || j?.error || JSON.stringify(j);
+        } catch {}
+      }
+      return json(upstream.status || 502, { ok: false, error: msg }, req);
     }
 
     const encoder = new TextEncoder();
     const reader = upstream.body.getReader();
 
-    DBG("Begin streaming…");
+    DBG(env, "Begin streaming…");
     let bytes = 0, chunks = 0;
 
+    const IDLE_MS = 20000;
+    let idleTimer: number | ReturnType<typeof setTimeout> | null = null;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer as any);
+      idleTimer = setTimeout(() => {
+        try { reader.cancel("idle-timeout"); } catch {}
+      }, IDLE_MS) as any;
+    };
+
     const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
+      start(controller) {
+        if (body?.mcp && (body.mcp.name || body.mcp.service)) {
+          const name = body.mcp.name || body.mcp.service;
+          DBG(env, "Emit MCP announce", name);
+          controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
+        }
+        resetIdle();
+      },
+      async pull(controller) {
         try {
-          if (body?.mcp && (body.mcp.name || body.mcp.service)) {
-            const name = body.mcp.name || body.mcp.service;
-            DBG(env, "Emit MCP announce", name);
-            controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
+          const { done, value } = await reader.read();
+          if (done) {
+            DBG(env, "Upstream finished", { chunks, bytes });
+            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+            controller.close();
+            return;
           }
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            chunks++; bytes += value?.byteLength || 0;
+          resetIdle();
+          if (value && value.length) {
+            bytes += value.length; chunks += 1;
             if (chunks === 1 || chunks % 20 === 0) DBG(env, "stream chunk", { chunks, bytes });
             controller.enqueue(value);
           }
-          DBG("Upstream finished", { chunks, bytes });
         } catch (e: any) {
-          DBG("Streaming error", e?.message || String(e));
-          controller.enqueue(encoder.encode(
-            `event: error\ndata: ${JSON.stringify({ message: e?.message || String(e) })}\n\n`
-          ));
-        } finally {
-          DBG("Emit [DONE] and close");
+          const msg = e?.message || String(e);
+          DBG(env, "Streaming error (pull)", msg);
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: msg })}\n\n`));
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
+      },
+
+      cancel(reason) {
+        try { if (idleTimer) clearTimeout(idleTimer as any); } catch {}
+        DBG(env, "Stream canceled", reason || "(no reason)");
+        try { reader.cancel(reason || "client-canceled"); } catch {}
       },
     });
 
@@ -195,13 +239,13 @@ export async function handleChat(req: Request, env: Env, _ctx: ExecutionContext)
     });
 
   } catch (e: any) {
-    DBG("Outer catch", e?.message || String(e));
+    DBG(env, "Outer catch", e?.message || String(e));
     return json(500, { ok: false, error: `Internal error: ${e?.message || String(e)}` }, req);
   }
 }
 
 /** Back-compat explicit stream entry (works for both GET test and POST chat). */
-export async function handleChatStream(req: Request, env: Env, ctx: ExecutionContext) {
+export async function handleChatStream(req: Request, env: Env, ctx: any) {
   // Reuse the same logic; the route is just a different path.
   return handleChat(req, env, ctx);
 }
@@ -216,10 +260,17 @@ function getApiKey(env: Env): string | null {
 }
 function getBaseUrl(env: Env): string {
   // Support multiple common env var names for the base
-  let base = (env.OPENAI_BASE_URL || env.AI_GATEWAY_BASE || env.AI_GATEWAY_URL || env.OPENAI_BASE || "").trim();
+  let base = (
+    (env as any)?.AI_GATEWAY_BASE?.toString?.().trim?.() ||
+    env.OPENAI_BASE_URL?.toString?.().trim?.() ||
+    (env as any)?.AI_GATEWAY_URL?.toString?.().trim?.() ||
+    (env as any)?.OPENAI_BASE?.toString?.().trim?.() ||
+    ""
+  );
+
   if (base) {
     base = base.replace(/\/+$/, "");
-    // Ensure gateway-style path includes /openai/v1
+    // Ensure gateway-style path includes /openai/v1 and avoid duplication if already present
     if (!/\/(openai)(\/|$)/.test(base)) base = `${base}/openai`;
     if (!/\/(v1)(\/|$)/.test(base)) base = `${base}/v1`;
     return base;
