@@ -48,4 +48,3 @@ export function getCookie(req, name) {
 export function setSessionCookie(token, maxAgeSeconds = 60 * 60 * 24 * 7) {
   return `session=${encodeURIComponent(token)}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 }
-I got
