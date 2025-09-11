@@ -49,13 +49,19 @@ const ALLOWED_ORIGINS = new Set([
   "https://chrisbrighouse.com",
 ]);
 const withCORS = (req: Request, res: Response): Response => {
-  const origin = req.headers.get("Origin") || "";
-  const headers = new Headers(res.headers);
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Vary", "Origin");
+  try {
+    const origin = req.headers.get("Origin") || "";
+    const headers = new Headers(res.headers);
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Vary", "Origin");
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+    return new Response(res.body, { status: res.status, headers });
+  } catch (e: any) {
+    try { console.error("withCORS error:", e?.message || String(e)); } catch {}
+    return res; // Fall back to original response on any error
   }
-  return new Response(res.body, { status: res.status, headers });
 };
 
 const preflight: H = async (req) => {
@@ -68,6 +74,7 @@ const preflight: H = async (req) => {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Vary"] = "Origin";
+    headers["Access-Control-Allow-Credentials"] = "true";
   }
   return new Response(null, { status: 204, headers });
 };
@@ -94,8 +101,8 @@ router.post(
         })
       );
     }
-    const res = await Auth.login({ req, env });
-    return withCORS(req, res);
+    // Same-origin form POST; avoid CORS wrapper to minimize Set-Cookie edge cases
+    return await Auth.login({ req, env });
   })
 );
 
@@ -131,7 +138,23 @@ router.post(
 );
 router.get(
   "/api/me",
-  trace("auth.me.alias", async (req, env, ctx) => withCORS(req, await Auth.me({ req, env })))
+  trace("auth.me.alias", async (req, env, ctx) => {
+    // Back-compat shape for legacy clients expecting { authenticated: boolean }
+    const baseRes = await Auth.me({ req, env });
+    const status = baseRes.status;
+    let payload: any = { authenticated: status === 200 };
+    try {
+      const j = await baseRes.clone().json();
+      if (j && typeof j === "object") {
+        if (j.user) payload.user = j.user;
+      }
+    } catch {}
+    const res = new Response(JSON.stringify(payload), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+    return withCORS(req, res);
+  })
 );
 router.post(
   "/api/logout",
@@ -214,4 +237,3 @@ router.all(
 
 export { router };
 export default router;
-
