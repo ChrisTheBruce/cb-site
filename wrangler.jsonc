@@ -12,8 +12,8 @@
   },
 
   "routes": [
-    { "pattern": "chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" },
-    { "pattern": "www.chrisbrighouse.com/*", "zone_name": "chrisbrighouse.com" }
+    { "pattern": "chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" },
+    { "pattern": "www.chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" }
   ],
 
   // Optional but handy
