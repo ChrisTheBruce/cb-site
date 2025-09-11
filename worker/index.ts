@@ -44,58 +44,33 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
-    console.log("📩 entering fetch, about to call router.handle");
-
-    // ---- 1) Direct auth endpoints (MOVED BEFORE router to avoid conflicts)
-    if (pathname === "/api/auth/login" && request.method === "POST") {
-      return auth.login({ req: request, env });
-    }
-    if (pathname === "/api/auth/me" && request.method === "GET") {
-      return auth.me({ req: request, env });
-    }
-    if (pathname === "/api/auth/logout" && request.method === "POST") {
-      return auth.logout({ req: request, env });
-    }
-
-    // ---- 2) Direct endpoint preserved from your original code
-    if (pathname === "/api/email/clear" && request.method === "POST") {
-      try {
-        return await (clearDownloadEmailCookie as any)(request, env);
-      } catch {
-        return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
-      }
-    }
-
-    // ---- 3) Other API routes go through itty-router
+    // ---- 1) API routes → itty-router
     if (pathname.startsWith("/api/")) {
       try {
-        DBG("index.ts: before router.handle", { method: request.method, path: pathname });
-        const res = await router.handle(request, env, ctx);
-        DBG("index.ts: after router.handle", {
-          ok: res instanceof Response,
-          status: res instanceof Response ? res.status : undefined,
-        });
-        if (res instanceof Response) {
-          const headers = new Headers(res.headers);
-          headers.set("x-build", "chat-debug-r1");
-          return new Response(res.body, { status: res.status, headers });
-        }
-        return res;
-      } catch (err: any) {
-        DBG("index.ts: router.handle threw", err?.message || String(err));
-        return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
+        DBG("index.ts: router for API", { method: request.method, path: pathname });
+        return await router.handle(request, env, ctx);
+      } catch (err) {
+        console.error("💥 router.handle threw:", err);
+        return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
           status: 500,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          headers: { "content-type": "application/json" },
         });
       }
     }
 
-    // ---- 2) Static assets + SPA fallback (unchanged)
+    // ---- 2) Gate downloads on email cookie
+    if (pathname.startsWith("/downloads/")) {
+      const cookie = request.headers.get("Cookie") || "";
+      const hasAllowed = /(?:^|;\s*)(download_email|cb_dl_email|DL_EMAIL)=/.test(cookie);
+      if (!hasAllowed) {
+        const html = `<!doctype html>\n<html>\n  <head><meta charset=\"utf-8\"><title>Download requires email</title></head>\n  <body style=\"font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px;\">\n    <h1 style=\"margin:0 0 8px;\">Email required</h1>\n    <p>Go back to the downloads page and click the link again; you'll be prompted for your email.</p>\n    <p><a href=\"/\" style=\"color:#1f6feb;text-decoration:none;\">Return to site</a></p>\n  </body>\n</html>`;
+        return new Response(html, { status: 403, headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+    }
+
+    // ---- 3) Static assets + SPA fallback
     if (env.ASSETS) {
-      // try the exact asset
+      // Try exact asset
       let res = await env.ASSETS.fetch(request);
       if (res.status !== 404) return res;
 
@@ -231,3 +206,4 @@ export default {
 };
 
 */
+

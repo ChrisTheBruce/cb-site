@@ -7,8 +7,11 @@ try { console.log("🐛 [chat] module loaded"); } catch {}
 interface Env {
   OPENAI_API?: string;
   OPENAI_API_KEY?: string;
-  OPENAI_BASE_URL?: string;  // e.g. https://gateway.ai.cloudflare.com/v1/.../cb-openai/
-  DEBUG_MODE?: string;       // "1","true","yes","on","debug" → enable
+  OPENAI_BASE_URL?: string;   // e.g. https://gateway.ai.cloudflare.com/v1/.../cb-openai/
+  OPENAI_BASE?: string;       // alt common name
+  AI_GATEWAY_BASE?: string;   // Cloudflare AI Gateway as set in wrangler.jsonc
+  AI_GATEWAY_URL?: string;    // alt name
+  DEBUG_MODE?: string;        // "1","true","yes","on","debug" → enable
 }
 
 function isDebug(env: Env): boolean {
@@ -249,24 +252,27 @@ export async function handleChatStream(req: Request, env: Env, ctx: any) {
 
 // ---------------------------- helpers ----------------------------
 function getApiKey(env: Env): string | null {
-  return env.OPENAI_API?.trim?.() || env.OPENAI_API_KEY?.trim?.() || null;
+  return (
+    env.OPENAI_API?.trim?.() ||
+    env.OPENAI_API_KEY?.trim?.() ||
+    null
+  );
 }
 function getBaseUrl(env: Env): string {
-  let base =
+  // Support multiple common env var names for the base
+  let base = (
     (env as any)?.AI_GATEWAY_BASE?.toString?.().trim?.() ||
     env.OPENAI_BASE_URL?.toString?.().trim?.() ||
+    (env as any)?.AI_GATEWAY_URL?.toString?.().trim?.() ||
     (env as any)?.OPENAI_BASE?.toString?.().trim?.() ||
-    "";
+    ""
+  );
 
   if (base) {
     base = base.replace(/\/+$/, "");
-    const lower = base.toLowerCase();
-    const isGateway =
-      lower.includes("gateway.ai.cloudflare.com") ||
-      /\/cb-openai(\/|$)/.test(lower);
-    if (!isGateway && !/\/openai$/.test(base)) {
-      base = `${base}/openai`;
-    }
+    // Ensure gateway-style path includes /openai/v1 and avoid duplication if already present
+    if (!/\/(openai)(\/|$)/.test(base)) base = `${base}/openai`;
+    if (!/\/(v1)(\/|$)/.test(base)) base = `${base}/v1`;
     return base;
   }
   return "https://api.openai.com/v1";
@@ -309,3 +315,4 @@ function sseTest(): Response {
     },
   });
 }
+
