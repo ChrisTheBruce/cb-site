@@ -50,13 +50,12 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 const withCORS = (req: Request, res: Response): Response => {
   const origin = req.headers.get("Origin") || "";
-  const headers = new Headers(res.headers);
   if (origin && ALLOWED_ORIGINS.has(origin)) {
-    headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Vary", "Origin");
-    headers.set("Access-Control-Allow-Credentials", "true");
+    try { res.headers.set("Access-Control-Allow-Origin", origin); } catch {}
+    try { res.headers.set("Vary", "Origin"); } catch {}
+    try { res.headers.set("Access-Control-Allow-Credentials", "true"); } catch {}
   }
-  return new Response(res.body, { status: res.status, headers });
+  return res;
 };
 
 const preflight: H = async (req) => {
