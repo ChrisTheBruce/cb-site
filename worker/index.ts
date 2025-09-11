@@ -42,86 +42,35 @@ function wantsHtml(req: Request) {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const t0 = Date.now();
     const { pathname } = url;
 
-
-    console.log("📩 entering fetch, about to call router.handle");
-
-    // TIMEOUT GUARD: logs if router never resolves
-    const timeoutMs = 15000; // 15s just for diagnostics
-    const hung = new Promise<Response>((resolve) => {
-      setTimeout(() => {
-        console.error(`⏳ router.handle still pending after ${timeoutMs}ms for ${request.url}`);
-        // We don't resolve here to avoid masking the real handler; just log.
-      }, timeoutMs);
-    }) as Promise<Response>;
-
-    let res: Response;
-    try {
-      const handled = router.handle(request, env, ctx);
-      res = await Promise.race([handled, hung]); // logs on hang, still awaits real result
-    } catch (err) {
-      console.error("💥 router.handle threw:", err);
-      return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
-        status: 500,
-        headers: { "content-type": "application/json" }
-      });
-    }
-
-    console.log(`✅ router.handle resolved in ${Date.now() - t0}ms`);
-    return res;
-
-    // ---- 0) Direct endpoint preserved from your original code
-    if (pathname === "/api/email/clear" && request.method === "POST") {
+    // ---- 1) API routes → itty-router
+    if (pathname.startsWith("/api/")) {
       try {
-        return await (clearDownloadEmailCookie as any)(request, env);
-      } catch {
-        return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
+        DBG("index.ts: router for API", { method: request.method, path: pathname });
+        return await router.handle(request, env, ctx);
+      } catch (err) {
+        console.error("💥 router.handle threw:", err);
+        return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
           status: 500,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          headers: { "content-type": "application/json" },
         });
       }
     }
 
-    // ---- 1) Direct auth endpoints (bypass router to avoid any hanging path)
-    if (pathname === "/api/auth/login" && request.method === "POST") {
-      return auth.login({ req: request, env });
-    }
-    if (pathname === "/api/auth/me" && request.method === "GET") {
-      return auth.me({ req: request, env });
-    }
-    if (pathname === "/api/auth/logout" && request.method === "POST") {
-      return auth.logout({ req: request, env });
-    }
-
-    // ---- 2) All other API routes go through itty-router (unchanged behaviour)
-   if (pathname.startsWith("/api/")) {
-    try {
-      // ⬇️ ADD THIS
-      DBG("index.ts: before router.handle", { method: request.method, path: pathname });
-
-      const res = await router.handle(request, env, ctx);
-
-      // ⬇️ ADD THIS
-      DBG("index.ts: after router.handle", {
-        ok: res instanceof Response,
-        status: res instanceof Response ? res.status : undefined,
-      });
-
-      return res;
-      } catch (err: any) {
-        DBG("index.ts: router.handle threw", err?.message || String(err));
-        return new Response(JSON.stringify({ ok: false, error: "Internal error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
+    // ---- 2) Gate downloads on email cookie
+    if (pathname.startsWith("/downloads/")) {
+      const cookie = request.headers.get("Cookie") || "";
+      const hasAllowed = /(?:^|;\s*)(download_email|cb_dl_email|DL_EMAIL)=/.test(cookie);
+      if (!hasAllowed) {
+        const html = `<!doctype html>\n<html>\n  <head><meta charset=\"utf-8\"><title>Download requires email</title></head>\n  <body style=\"font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px;\">\n    <h1 style=\"margin:0 0 8px;\">Email required</h1>\n    <p>Go back to the downloads page and click the link again; you'll be prompted for your email.</p>\n    <p><a href=\"/\" style=\"color:#1f6feb;text-decoration:none;\">Return to site</a></p>\n  </body>\n</html>`;
+        return new Response(html, { status: 403, headers: { "content-type": "text/html; charset=utf-8" } });
       }
     }
 
-    // ---- 3) Static assets + SPA fallback (unchanged)
+    // ---- 3) Static assets + SPA fallback
     if (env.ASSETS) {
-      // try the exact asset
+      // Try exact asset
       let res = await env.ASSETS.fetch(request);
       if (res.status !== 404) return res;
 

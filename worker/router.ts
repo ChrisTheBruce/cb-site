@@ -3,6 +3,7 @@ import { Router } from "itty-router";
 import * as Auth from "./handlers/auth";
 import * as Chat from "./handlers/chat";
 import * as Notify from "./handlers/notify";
+import { clearDownloadEmailCookie, setDownloadEmailCookie } from "./handlers/email";
 
 type H = (req: Request, env: any, ctx: ExecutionContext) => Promise<Response> | Response;
 
@@ -34,10 +35,17 @@ const trace = (name: string, h: H): H => async (req, env, ctx) => {
 };
 
 // Add CORS without touching handlers
-const withCORS = (res: Response): Response => {
+const ALLOWED_ORIGINS = new Set([
+  "https://www.chrisbrighouse.com",
+  "https://chrisbrighouse.com",
+]);
+const withCORS = (req: Request, res: Response): Response => {
+  const origin = req.headers.get("Origin") || "";
   const headers = new Headers(res.headers);
-  headers.set("Access-Control-Allow-Origin", "https://www.chrisbrighouse.com");
-  headers.append("Vary", "Origin");
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Vary", "Origin");
+  }
   return new Response(res.body, { status: res.status, headers });
 };
 
@@ -57,6 +65,9 @@ const router = Router();
 // Preflight
 router.options("/api/auth/*", preflight);
 router.options("/api/chat/*", preflight);
+router.options("/api/email/*", preflight);
+router.options("/api/notify/*", preflight);
+router.options("/api/download-notify", preflight);
 
 // ---------- AUTH ----------
 const authLogin = pick(Auth, ["login", "authLogin", "authLoginHandler", "handleLogin"]);
@@ -66,13 +77,14 @@ router.post(
     // diagnostic bypass to prove route wiring (does NOT alter auth.ts)
     if (req.headers.get("x-diag-skip-auth") === "1") {
       return withCORS(
+        req,
         new Response(JSON.stringify({ ok: true, diag: "auth route reachable" }), {
           headers: { "content-type": "application/json" },
         })
       );
     }
     const res = await authLogin(req, env, ctx);
-    return withCORS(res);
+    return withCORS(req, res);
   })
 );
 
@@ -82,7 +94,7 @@ router.get(
   "/api/auth/me",
   trace("auth.me", async (req, env, ctx) => {
     const res = await authMe(req, env, ctx);
-    return withCORS(res);
+    return withCORS(req, res);
   })
 );
 
@@ -98,14 +110,19 @@ router.post(
 
 // ---------- CHAT (uses your existing Cloudflare AI Gateway code) ----------
 const chatStream = pick(Chat, ["stream", "chatStream", "chatStreamHandler"]);
+// Allow both GET (for ?ping and ?test=sse diagnostics) and POST (normal chat)
+router.get(
+  "/api/chat/stream",
+  trace("chat.stream.get", async (req, env, ctx) => withCORS(req, await chatStream(req, env, ctx)))
+);
 router.post(
   "/api/chat/stream",
-  trace("chat.stream", async (req, env, ctx) => withCORS(await chatStream(req, env, ctx)))
+  trace("chat.stream", async (req, env, ctx) => withCORS(req, await chatStream(req, env, ctx)))
 );
 // Alias for any old path variants
 router.post(
   "/ai/chat/stream",
-  trace("chat.stream.alias", async (req, env, ctx) => withCORS(await chatStream(req, env, ctx)))
+  trace("chat.stream.alias", async (req, env, ctx) => withCORS(req, await chatStream(req, env, ctx)))
 );
 
 // Known-good echo stream to validate plumbing (no Gateway)
@@ -125,6 +142,7 @@ router.post(
       }
     })();
     return withCORS(
+      req,
       new Response(readable, {
         headers: {
           "Content-Type": "text/event-stream",
@@ -139,6 +157,18 @@ router.post(
 // ---------- NOTIFY ----------
 const notifyDownload = pick(Notify, ["notify", "download", "notifyDownload"]);
 router.post("/api/notify/download", trace("notify.download", notifyDownload));
+// Alias for legacy/default client endpoint name
+router.post("/api/download-notify", trace("notify.download.alias", notifyDownload));
+
+// ---------- EMAIL (downloads cookie) ----------
+router.post(
+  "/api/email/set",
+  trace("email.set", async (req) => withCORS(req, await setDownloadEmailCookie(req)))
+);
+router.post(
+  "/api/email/clear",
+  trace("email.clear", async (req) => withCORS(req, clearDownloadEmailCookie()))
+);
 
 // 404 fallback
 router.all(
