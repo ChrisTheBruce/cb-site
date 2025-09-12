@@ -40,6 +40,15 @@
     "preview": {
       "vars": { "DEBUG_MODE": "true" }
     },
+    "staging": {
+      // Staging without Durable Objects bindings; assets still served from dist
+      "vars": { "DEBUG_MODE": "true" },
+      "assets": {
+        "directory": "dist",
+        "binding": "ASSETS"
+      },
+      "durable_objects": { "bindings": [] }
+    },
     "production": {
       "vars": { "DEBUG_MODE": "true" }
     }

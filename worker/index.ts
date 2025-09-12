@@ -11,6 +11,7 @@ import * as auth from "./handlers/auth";
 import * as chat from "./handlers/chat";
 import * as notify from "./handlers/notify";
 import { setDownloadEmailCookie, clearDownloadEmailCookie } from "./handlers/email";
+import { handleHealth } from "./handlers/health";
 import { DBG } from "./env";
 import type { Fetcher } from "@cloudflare/workers-types";
 
@@ -62,6 +63,10 @@ export default {
           headers["Vary"] = "Origin";
         }
         return new Response(null, { status: 204, headers });
+      }
+      // Lightweight health check (mobile reachability test)
+      if (pathname === "/api/health" && request.method === "GET") {
+        return handleHealth();
       }
       // TEMP: Early return to prove routing and prevent hangs while diagnosing
       if (pathname === "/api/auth/ping") {
