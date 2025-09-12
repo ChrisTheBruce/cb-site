@@ -69,7 +69,10 @@ export default {
         return await auth.login({ req: request, env });
       }
 
-      // TEMP: Directly handle auth logout endpoint (keep me via router)
+      // TEMP: Directly handle auth me/logout endpoints (bypass router)
+      if (pathname === "/api/auth/me" && request.method === "GET") {
+        return await auth.me({ req: request, env });
+      }
       if (pathname === "/api/auth/logout" && request.method === "POST") {
         return await auth.logout({ req: request, env });
       }
@@ -81,7 +84,22 @@ export default {
       if (pathname === "/api/logout" && request.method === "POST") {
         return await auth.logout({ req: request, env });
       }
-      // Keep /api/me legacy alias via router
+      // TEMP: Back-compat /api/me served directly
+      if (pathname === "/api/me" && request.method === "GET") {
+        const baseRes = await auth.me({ req: request, env });
+        const status = baseRes.status;
+        let payload: any = { authenticated: status === 200 };
+        try {
+          const j = await baseRes.clone().json();
+          if (j && typeof j === "object" && (j as any).user) {
+            payload.user = (j as any).user;
+          }
+        } catch {}
+        return new Response(JSON.stringify(payload), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      }
 
       // TEMP: Directly handle chat stream (both GET diagnostics and POST chat)
       if (pathname === "/api/chat/stream" && (request.method === "GET" || request.method === "POST")) {
