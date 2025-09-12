@@ -113,9 +113,10 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
       const lastUser = [...body.messages].reverse().find((m) => m?.role === "user")?.content || "";
       const q = extractGeoQuery(lastUser);
       if (q) {
+        // Mark that we are invoking the MCP, even if lookup fails, so UI shows "MCP: GeoLocator"
+        mcpServiceName = "GeoLocator";
         const geo = await geocode(q);
         if (geo) {
-          mcpServiceName = "GeoLocator"; // shown to client via SSE event
           const sys = { role: "system" as const, content: `MCP GeoLocator result for "${q}": lat=${geo.lat}, lon=${geo.lon} (${geo.name}). Use these exact coordinates in your reply.` };
           enrichedMessages = [...body.messages, sys];
         }
