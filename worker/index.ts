@@ -10,6 +10,7 @@ export { DownloadLog } from "./do/DownloadLog";
 // Add these:
 import { router } from "./router";
 import * as auth from "./handlers/auth";
+import * as chat from "./handlers/chat";
 import { DBG } from "./env";
 import type { Fetcher } from "@cloudflare/workers-types";
 
@@ -66,6 +67,42 @@ export default {
       // TEMP: Directly handle real login to isolate router/CORS issues
       if (pathname === "/api/auth/login" && request.method === "POST") {
         return await auth.login({ req: request, env });
+      }
+
+      // TEMP: Directly handle auth me/logout endpoints (bypass router)
+      if (pathname === "/api/auth/me" && request.method === "GET") {
+        return await auth.me({ req: request, env });
+      }
+      if (pathname === "/api/auth/logout" && request.method === "POST") {
+        return await auth.logout({ req: request, env });
+      }
+
+      // TEMP: Back-compat aliases
+      if (pathname === "/api/login" && request.method === "POST") {
+        return await auth.login({ req: request, env });
+      }
+      if (pathname === "/api/logout" && request.method === "POST") {
+        return await auth.logout({ req: request, env });
+      }
+      if (pathname === "/api/me" && request.method === "GET") {
+        const baseRes = await auth.me({ req: request, env });
+        const status = baseRes.status;
+        let payload: any = { authenticated: status === 200 };
+        try {
+          const j = await baseRes.clone().json();
+          if (j && typeof j === "object" && (j as any).user) {
+            payload.user = (j as any).user;
+          }
+        } catch {}
+        return new Response(JSON.stringify(payload), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      // TEMP: Directly handle chat stream (both GET diagnostics and POST chat)
+      if (pathname === "/api/chat/stream" && (request.method === "GET" || request.method === "POST")) {
+        return await chat.handleChat(request, env as any, ctx);
       }
 
       try {
