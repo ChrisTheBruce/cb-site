@@ -7,8 +7,8 @@ export default function Navbar() {
   const navigate = useNavigate();
 
   const onSignIn = () => {
-    // Always route to login with next=/Chat
-    navigate(`/login?next=${encodeURIComponent("/Chat")}`);
+    // Always route to login with next=/chat
+    navigate(`/login?next=${encodeURIComponent("/chat")}`);
   };
 
   const onSignOut = async () => {
@@ -24,10 +24,10 @@ export default function Navbar() {
         </Link>
 
         <nav style={{ marginLeft: "auto", display: "flex", gap: 18 }}>
-          <Link to="/Work">Work</Link>
-          <Link to="/Experience">Experience</Link>
-          <Link to="/Contact">Contact</Link>
-          <Link to="/Downloads">Downloads</Link>
+          <Link to="/work">Work</Link>
+          <Link to="/experience">Experience</Link>
+          <Link to="/contact">Contact</Link>
+          <Link to="/downloads">Downloads</Link>
         </nav>
 
         <div style={{ marginLeft: 16 }}>

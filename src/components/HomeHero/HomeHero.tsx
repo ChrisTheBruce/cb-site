@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import styles from './HomeHero.module.css';
 
 export default function HomeHero() {
@@ -23,18 +24,18 @@ export default function HomeHero() {
           </p>
 
           <div className="mt-8 flex gap-3">
-            <a
-              href="#contact"
+            <Link
+              to="/contact"
               className="inline-flex items-center px-5 py-3 rounded-lg border font-medium text-white border-white/60 hover:bg-white/10"
             >
               Let’s talk
-            </a>
-            <a
-              href="#work"
+            </Link>
+            <Link
+              to="/work"
               className="inline-flex items-center px-5 py-3 rounded-lg border font-medium text-white border-white/60 hover:bg-white/10"
             >
-              See work
-            </a>
+              See Work
+            </Link>
           </div>
         </div>
 

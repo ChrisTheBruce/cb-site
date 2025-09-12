@@ -97,20 +97,6 @@ export default function Chat() {
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h1 className="text-2xl font-bold">Chat</h1>
-        <button
-          onClick={() => window.open('/chat2', '_blank', 'width=1000,height=700')}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "1px solid #0b5cff",
-            background: "#0b5cff",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 14,
-          }}
-        >
-          Try Chat2
-        </button>
       </div>
 
       <div

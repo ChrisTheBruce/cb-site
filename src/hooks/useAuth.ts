@@ -43,26 +43,9 @@ async function fetchSession(signal?: AbortSignal): Promise<User | null> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Start signed-out with no initial fetch so the UI always shows "Sign in" on first load
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const u = await fetchSession(ctrl.signal);
-        setUser(u);
-      } catch {
-        setError("Failed to load session");
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-    return () => ctrl.abort();
-  }, []);
 
   const refresh = async () => {
     setLoading(true);
