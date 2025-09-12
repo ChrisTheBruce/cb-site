@@ -45,9 +45,30 @@ export default {
 
     // ---- 1) API routes → itty-router
     if (pathname.startsWith("/api/")) {
+      // TEMP: Early return to prove routing and prevent hangs while diagnosing
+      if (pathname === "/api/auth/ping") {
+        return new Response(
+          JSON.stringify({ ok: true, ts: Date.now() }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+      // TEMP: Diagnostic bypass for login wiring (no auth logic)
+      if (
+        pathname === "/api/auth/login" &&
+        request.headers.get("x-diag-skip-auth") === "1"
+      ) {
+        return new Response(
+          JSON.stringify({ ok: true, diag: "auth route reachable" }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+
       try {
         DBG("index.ts: router for API", { method: request.method, path: pathname });
-        return await router.handle(request, env, ctx);
+        const res: any = await router.handle(request, env, ctx);
+        if (res instanceof Response) return res;
+        // Defensive fallback so requests never hang even if no route matched
+        return new Response("Not Found", { status: 404 });
       } catch (err) {
         console.error("💥 router.handle threw:", err);
         return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
