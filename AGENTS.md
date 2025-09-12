@@ -33,9 +33,10 @@ API Endpoints (explicit routing)
   - GET/POST /api/chat/stream → worker/handlers/chat.handleChat
   - POST /ai/chat/stream → alias → chat.handleChat
   - POST /api/chat/echo-stream → simple SSE echo for plumbing tests
-- Notify (download event email via MailChannels)
-  - POST /api/notify/download → worker/handlers/notify.handleDownloadNotify
+- Notify (download event logging via Durable Object)
+  - POST /api/notify/download → worker/handlers/notify.handleDownloadNotify (stores event in DO)
   - POST /api/download-notify → alias
+  - GET  /api/admin/downloads → returns normalized JSON array of recent events (auth required)
 - Email (downloads cookie)
   - POST /api/email/set → worker/handlers/email.setDownloadEmailCookie
   - POST /api/email/clear → worker/handlers/email.clearDownloadEmailCookie
@@ -70,13 +71,16 @@ Downloads Gate
 - Any GET to /downloads/* requires one of these cookies:
   - download_email, cb_dl_email, or DL_EMAIL
 - If missing, responds with a 403 HTML explaining how to proceed.
+- On app startup, the client clears any existing download_email cookie so the user is prompted the next time they initiate a download; after entering email once per session, subsequent downloads proceed without prompting until cleared from the badge.
 
 Environment & Config
 - wrangler.jsonc (Production environment):
   - main: worker/index.ts
   - assets: { directory: dist, binding: ASSETS }
+  - durable_objects: { bindings: [{ name: DOWNLOAD_LOG, class_name: DownloadLog }] }
+  - migrations: includes DownloadLog
   - routes: set in Dashboard (ensure /api/* attached to Production)
-  - vars of note: AI_GATEWAY_BASE, DEBUG_MODE, SUPPORT_TO, MAILCHANNELS_FROM
+  - vars of note: AI_GATEWAY_BASE, DEBUG_MODE
 - worker/env.ts defines helper DBG(), isDebug(), and the Env type used across handlers.
 
 Local Scripts
@@ -97,8 +101,11 @@ Sanity Tests (curl)
 - Chat SSE test: curl -i -X GET 'https://www.chrisbrighouse.com/api/chat/stream?test=sse'
 - Chat POST: curl -i -X POST https://www.chrisbrighouse.com/api/chat/stream -H "Content-Type: application/json" --data '{"messages":[{"role":"user","content":"Hello"}]}'
 
+- Notify (store in DO): curl -i -X POST https://www.chrisbrighouse.com/api/notify/download -H "Content-Type: application/json" --data '{"path":"/assets/Chris-Brighouse-CV.pdf","title":"CV","email":"test@example.com","ts":1690000000000,"ua":"curl"}'
+- Admin DO export (must be signed in): curl -i https://www.chrisbrighouse.com/api/admin/downloads
+
 Troubleshooting Tips
 - If /api/* returns 500 with “Worker hung”, ensure you deployed to the same environment that owns the routes (Production) and that /api/* routes exist there.
 - Use wrangler tail --env=production to capture the exact error line for failing endpoints.
 - Keep diagnostics (ping and x-diag-skip-auth) enabled for quick wiring checks.
-
+- If admin downloads shows HTML instead of JSON, verify the Worker route is taking effect and you are authenticated; the endpoint returns JSON { items: [...] }.
