@@ -43,10 +43,10 @@ export default function Chat() {
         onMcp: (info) => {
           setMessages(prev => {
             const copy = prev.slice();
-            const insertAt = Math.max(0, copy.length - (copy[copy.length - 1]?.role === "assistant" ? 1 : 0));
-            const svc = info?.service || "MCP service";
+            const svc = info?.name || info?.service || "MCP service";
             const tool = info?.tool ? ` (${info.tool})` : "";
-            copy.splice(insertAt, 0, { role: "assistant", content: `MCP: ${svc}${tool}` });
+            // Always append a distinct MCP line that won't be overwritten by stream tokens
+            copy.push({ role: "assistant", content: `MCP: ${svc}${tool}` });
             return copy;
           });
         },
@@ -55,9 +55,13 @@ export default function Chat() {
           setMessages(prev => {
             const newMessages = [...prev];
             const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg && lastMsg.role === "assistant") {
+            const lastIsAssistant = lastMsg && lastMsg.role === "assistant";
+            const lastIsMcpLine = lastIsAssistant && typeof lastMsg.content === 'string' && lastMsg.content.startsWith('MCP: ');
+            if (lastIsAssistant && !lastIsMcpLine) {
+              // Update existing streaming assistant message
               lastMsg.content = draftRef.current;
             } else {
+              // Start a new assistant message for the stream (keep MCP line intact if present)
               newMessages.push({ role: "assistant", content: draftRef.current });
             }
             return newMessages;
