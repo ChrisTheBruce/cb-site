@@ -63,6 +63,11 @@ export default {
         );
       }
 
+      // TEMP: Directly handle real login to isolate router/CORS issues
+      if (pathname === "/api/auth/login" && request.method === "POST") {
+        return await auth.login({ req: request, env });
+      }
+
       try {
         DBG("index.ts: router for API", { method: request.method, path: pathname });
         const res: any = await router.handle(request, env, ctx);
