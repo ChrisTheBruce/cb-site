@@ -3,7 +3,6 @@
   "name": "cb-site",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-01",
-yes
 
   // Serve built frontend from Vite's output
   "assets": {
