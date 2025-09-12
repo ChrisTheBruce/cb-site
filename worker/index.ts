@@ -28,6 +28,7 @@ export interface Env {
   OPENAI_BASE_URL?: string;
   DEBUG_MODE?: string;
   ASSETS?: Fetcher;   // optional
+  DOWNLOAD_LOG?: DurableObjectNamespace; // Durable Object for download events
 }
 
 function wantsHtml(req: Request) {

@@ -1,7 +1,7 @@
 // /worker/handlers/notify.ts
+// Logs download events to Durable Object; no outbound email.
 type Env = {
-  SUPPORT_TO?: string;          // e.g., "support@chrisbrighouse.com"
-  MAILCHANNELS_FROM?: string;   // e.g., "noreply@chrisbrighouse.com"
+  DOWNLOAD_LOG?: DurableObjectNamespace;
 };
 
 function corsHeaders() {
@@ -42,56 +42,35 @@ export async function handleDownloadNotify(req: Request, env: Env): Promise<Resp
     return json({ ok: false, error: 'missing/invalid path or email' }, { status: 400 });
   }
 
-  // Build the message
-  const to = env.SUPPORT_TO || 'support@chrisbrighouse.com';
-  const from = env.MAILCHANNELS_FROM || 'noreply@chrisbrighouse.com';
-
-  const subject = `Download: ${title || path} by ${email}`;
-  const text =
-`A download was requested.
-
-File:    ${title || path}
-Path:    ${path}
-Email:   ${email}
-Time:    ${ts ? new Date(ts).toISOString() : new Date().toISOString()}
-UA:      ${ua || 'n/a'}
-`;
-
-  // Attempt MailChannels send
-  const mcUrl = 'https://api.mailchannels.net/tx/v1/send';
-  const mcReq = {
-    personalizations: [{ to: [{ email: to }] }],
-    from: { email: from, name: 'Downloads' },
-    subject,
-    content: [
-      { type: 'text/plain', value: text },
-    ],
-  };
-
-  console.log('[🐛 DBG][WK notify] sending via MailChannels', { to, from, subject });
-
-  let status = 0;
-  let body = '';
+  // Append to Durable Object
   try {
-    const res = await fetch(mcUrl, {
+    const ns = env.DOWNLOAD_LOG;
+    if (!ns) {
+      console.log('[🐛 DBG][WK notify] DOWNLOAD_LOG binding missing');
+      return json({ ok: false, error: 'storage unavailable' }, { status: 500 });
+    }
+
+    const id = ns.idFromName('global-downloads');
+    const stub = ns.get(id);
+
+    const ip = (req.headers.get('cf-connecting-ip') || '').trim() || undefined;
+    const referer = req.headers.get('referer') || undefined;
+
+    const doRes = await stub.fetch('https://do.local/append', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mcReq),
-      // Abort after ~8s to avoid hangs
-      signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined,
+      body: JSON.stringify({ path, title, email, ts, ua, ip, referer }),
     });
-    status = res.status;
-    body = await res.text();
-    console.log('[🐛 DBG][WK notify] MailChannels response', { status, body: body.slice(0, 300) });
-  } catch (err: any) {
-    console.log('[🐛 DBG][WK notify] MailChannels fetch error', err?.message || String(err));
-    return json({ ok: false, error: 'mail send failed (fetch error)' }, { status: 502 });
+
+    if (!doRes.ok) {
+      const text = await doRes.text().catch(() => '');
+      console.log('[🐛 DBG][WK notify] DO append failed', doRes.status, text.slice(0, 200));
+      return json({ ok: false, error: 'store failed' }, { status: 502 });
+    }
+  } catch (e: any) {
+    console.log('[🐛 DBG][WK notify] DO append error', e?.message || String(e));
+    return json({ ok: false, error: 'store error' }, { status: 502 });
   }
 
-  if (status >= 200 && status < 300) {
-    return json({ ok: true, sent: true });
-  } else {
-    // Return ok=false but include response details for debugging
-    return json({ ok: false, sent: false, status, body: body.slice(0, 500) }, { status: 502 });
-  }
+  return json({ ok: true, stored: true });
 }
