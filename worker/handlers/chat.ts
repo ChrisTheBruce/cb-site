@@ -105,6 +105,25 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
     const baseUrl = getBaseUrl(env);
     const upstreamUrl = `${baseUrl}/chat/completions`;
 
+    // --- MCP: Geo lookup preflight -------------------------------------------------
+    // Detect simple geo/location queries and enrich context with accurate coords
+    let mcpServiceName: string | null = null;
+    let enrichedMessages = body.messages;
+    try {
+      const lastUser = [...body.messages].reverse().find((m) => m?.role === "user")?.content || "";
+      const q = extractGeoQuery(lastUser);
+      if (q) {
+        const geo = await geocode(q);
+        if (geo) {
+          mcpServiceName = "GeoLocator"; // shown to client via SSE event
+          const sys = { role: "system" as const, content: `MCP GeoLocator result for "${q}": lat=${geo.lat}, lon=${geo.lon} (${geo.name}). Use these exact coordinates in your reply.` };
+          enrichedMessages = [...body.messages, sys];
+        }
+      }
+    } catch (e: any) {
+      DBG(env, "geo mcp failed", e?.message || String(e));
+    }
+
 
     // --- DEBUG: upstream target + self-recursion check ---
     const reqHost = new URL(req.url).host;
@@ -141,7 +160,7 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
       upstream = await fetch(upstreamUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ model, temperature, stream: true, messages: body.messages }),
+        body: JSON.stringify({ model, temperature, stream: true, messages: enrichedMessages }),
         signal: connectTO.signal,
       });
     } catch (e: any) {
@@ -190,8 +209,14 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
+        // Emit MCP usage if provided by client or detected via geo enrichment
+        let name: string | undefined;
         if (body?.mcp && (body.mcp.name || body.mcp.service)) {
-          const name = body.mcp.name || body.mcp.service;
+          name = body.mcp.name || body.mcp.service as any;
+        } else if (mcpServiceName) {
+          name = mcpServiceName;
+        }
+        if (name) {
           DBG(env, "Emit MCP announce", name);
           controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
         }
@@ -316,3 +341,46 @@ function sseTest(): Response {
   });
 }
 
+// ---------------------------- MCP helpers ----------------------------
+function extractGeoQuery(text: string): string | null {
+  const t = (text || "").trim();
+  if (!t) return null;
+  const lower = t.toLowerCase();
+  // Basic patterns: "coordinates of X", "location of X", "where is X", "coords for X"
+  const m1 = lower.match(/(?:coordinates|coords)\s+(?:of|for)\s+(.+)/);
+  const m2 = lower.match(/location\s+(?:of|for)\s+(.+)/);
+  const m3 = lower.match(/where\s+is\s+(.+)/);
+  const m = m1 || m2 || m3;
+  const q = (m ? m[1] : t).trim();
+  // Strip trailing punctuation
+  return q.replace(/[?.!]+$/, "").slice(0, 120);
+}
+
+async function geocode(q: string): Promise<{ lat: string; lon: string; name: string } | null> {
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("q", q);
+    url.searchParams.set("limit", "1");
+    const r = await fetch(url.toString(), {
+      headers: {
+        "Accept": "application/json",
+        // Add a UA as recommended by Nominatim usage policy
+        "User-Agent": "cb-site/1.0 (chrisbrighouse.com)"
+      },
+      // timeout to avoid hangs
+      signal: (AbortSignal as any).timeout ? (AbortSignal as any).timeout(5000) : undefined,
+    });
+    if (!r.ok) return null;
+    const arr = await r.json().catch(() => [] as any[]);
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const first = arr[0];
+    const lat = String(first?.lat ?? "");
+    const lon = String(first?.lon ?? "");
+    if (!lat || !lon) return null;
+    const name = String(first?.display_name || q);
+    return { lat, lon, name };
+  } catch {
+    return null;
+  }
+}

@@ -168,9 +168,11 @@ export class DownloadLog extends DurableObject {
       try {
         const cursor = this.sql.exec(sql, ...args);
         const rows = cursor.toArray() as Row[];
+        // Avoid invalid header values: collapse SQL to a single line
+        const sqlOneLine = shorten(sql).replace(/\s+/g, ' ').trim();
         return json(
           { ok: true, count: rows.length, rows },
-          { headers: { "X-DO-Count": String(rows.length), "X-DO-Sql": shorten(sql) } }
+          { headers: { "X-DO-Count": String(rows.length), "X-DO-Sql": sqlOneLine } }
         );
       } catch (err: any) {
         return json(
@@ -219,7 +221,7 @@ export class DownloadLog extends DurableObject {
           "Content-Disposition": `attachment; filename="downloads_${new Date().toISOString().slice(0,10)}.csv"`
         } as any);
         headers.set("X-DO-Count", String(rows.length));
-        headers.set("X-DO-Sql", shorten(sql));
+        headers.set("X-DO-Sql", shorten(sql).replace(/\s+/g, ' ').trim());
 
         return new Response(lines.join("\n"), { status: 200, headers });
       } catch (err: any) {
