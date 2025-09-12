@@ -4,13 +4,13 @@
 //import { handleApi } from "./router";
 
 // Preserve your existing imports/exports:
-import { clearDownloadEmailCookie } from "./handlers/email";
 export { DownloadLog } from "./do/DownloadLog";
 
 // Add these:
-import { router } from "./router";
 import * as auth from "./handlers/auth";
 import * as chat from "./handlers/chat";
+import * as notify from "./handlers/notify";
+import { setDownloadEmailCookie, clearDownloadEmailCookie } from "./handlers/email";
 import { DBG } from "./env";
 import type { Fetcher } from "@cloudflare/workers-types";
 
@@ -44,8 +44,24 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
-    // ---- 1) API routes → itty-router
+    // ---- 1) API routes (explicit handlers)
     if (pathname.startsWith("/api/")) {
+      // CORS preflight for API
+      if (request.method === "OPTIONS") {
+        const origin = request.headers.get("Origin") || "";
+        const allowed = new Set(["https://www.chrisbrighouse.com", "https://chrisbrighouse.com"]);
+        const headers: Record<string, string> = {
+          "Access-Control-Allow-Headers": "content-type, authorization, accept, x-diag-skip-auth",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Max-Age": "600",
+        };
+        if (origin && allowed.has(origin)) {
+          headers["Access-Control-Allow-Origin"] = origin;
+          headers["Access-Control-Allow-Credentials"] = "true";
+          headers["Vary"] = "Origin";
+        }
+        return new Response(null, { status: 204, headers });
+      }
       // TEMP: Early return to prove routing and prevent hangs while diagnosing
       if (pathname === "/api/auth/ping") {
         return new Response(
@@ -101,24 +117,32 @@ export default {
         });
       }
 
-      // TEMP: Directly handle chat stream (both GET diagnostics and POST chat)
+      // Chat stream (both GET diagnostics and POST chat)
       if (pathname === "/api/chat/stream" && (request.method === "GET" || request.method === "POST")) {
         return await chat.handleChat(request, env as any, ctx);
       }
-
-      try {
-        DBG("index.ts: router for API", { method: request.method, path: pathname });
-        const res: any = await router.handle(request, env, ctx);
-        if (res instanceof Response) return res;
-        // Defensive fallback so requests never hang even if no route matched
-        return new Response("Not Found", { status: 404 });
-      } catch (err) {
-        console.error("💥 router.handle threw:", err);
-        return new Response(JSON.stringify({ ok: false, error: "Router error" }), {
-          status: 500,
-          headers: { "content-type": "application/json" },
-        });
+      if (pathname === "/ai/chat/stream" && request.method === "POST") {
+        return await chat.handleChat(request, env as any, ctx);
       }
+
+      // Notify download
+      if (pathname === "/api/notify/download" && request.method === "POST") {
+        return await notify.handleDownloadNotify(request, env as any);
+      }
+      if (pathname === "/api/download-notify" && request.method === "POST") {
+        return await notify.handleDownloadNotify(request, env as any);
+      }
+
+      // Email cookie set/clear
+      if (pathname === "/api/email/set" && request.method === "POST") {
+        return await setDownloadEmailCookie(request);
+      }
+      if (pathname === "/api/email/clear" && request.method === "POST") {
+        return clearDownloadEmailCookie();
+      }
+
+      // Unknown API route
+      return new Response("Not Found", { status: 404 });
     }
 
     // ---- 2) Gate downloads on email cookie
