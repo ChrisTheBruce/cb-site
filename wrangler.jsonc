@@ -20,9 +20,7 @@
 
   "vars": {
       "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/",
-      "DEBUG_MODE": "true",
-      "SUPPORT_TO": "support@chrisbrighouse.com",
-      "MAILCHANNELS_FROM": "noreply@chrisbrighouse.com"
+      "DEBUG_MODE": "true"
   },
 
   "durable_objects": {
@@ -74,9 +72,7 @@
 
   "vars": {
       "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/",
-       "DEBUG_MODE": "true",
-       "SUPPORT_TO": "support@chrisbrighouse.com",
-       "MAILCHANNELS_FROM": "noreply@chrisbrighouse.com"
+       "DEBUG_MODE": "true"
   },
 
 

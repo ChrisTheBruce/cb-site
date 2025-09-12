@@ -134,6 +134,52 @@ export default {
         return await notify.handleDownloadNotify(request, env as any);
       }
 
+      // Admin: list download logs from Durable Object (requires auth)
+      if (pathname === "/api/admin/downloads" && request.method === "GET") {
+        // Auth gate: reuse the existing handler to validate the session
+        const authRes = await auth.me({ req: request, env });
+        if (authRes.status !== 200) return authRes; // 401/500 passthrough
+
+        if (!env.DOWNLOAD_LOG) {
+          return new Response(JSON.stringify({ ok: false, error: "storage unavailable" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        // Proxy to DO export.json and normalize the shape
+        const src = new URL(request.url);
+        const doUrl = new URL("https://do.local/export.json");
+        const limit = Number(src.searchParams.get("limit") || "100") | 0;
+        if (limit) doUrl.searchParams.set("limit", String(Math.min(1000, Math.max(1, limit))));
+        const from = src.searchParams.get("from");
+        const to = src.searchParams.get("to");
+        if (from) doUrl.searchParams.set("from", from);
+        if (to) doUrl.searchParams.set("to", to);
+
+        const id = env.DOWNLOAD_LOG.idFromName("global-downloads");
+        const stub = env.DOWNLOAD_LOG.get(id);
+        const doRes = await stub.fetch(doUrl.toString(), { method: "GET" });
+        if (!doRes.ok) {
+          const text = await doRes.text().catch(() => "");
+          return new Response(JSON.stringify({ ok: false, error: "export failed", status: doRes.status, body: text.slice(0, 200) }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const j = await doRes.json().catch(() => ({ ok: false }));
+        const rows = Array.isArray(j?.rows) ? j.rows : [];
+        const items = rows.map((r: any) => ({
+          ts: new Date(Number(r.ts || 0)).toISOString(),
+          email: String(r.email || ""),
+          file: String(r.path || r.title || ""),
+        }));
+        return new Response(JSON.stringify({ items }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       // Email cookie set/clear
       if (pathname === "/api/email/set" && request.method === "POST") {
         return await setDownloadEmailCookie(request);
