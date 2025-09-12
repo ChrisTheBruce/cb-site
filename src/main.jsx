@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./index.css";
 import { AuthProvider } from "@/hooks/useAuth";
+import "./bootClearEmail.ts"; // clear download_email cookie on startup
 
 /* ---- Init debug flag ----
    1) Build-time: set from VITE_DEBUG_MODE (true/1/yes/on)

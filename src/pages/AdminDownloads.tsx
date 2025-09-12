@@ -48,8 +48,16 @@ export default function AdminDownloads() {
           return;
         }
         if (!res.ok) {
-          const t = await res.text();
-          throw new Error(t || `HTTP ${res.status}`);
+          // Avoid dumping raw HTML; show concise error
+          let msg = `HTTP ${res.status}`;
+          try {
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const j = await res.json();
+              if (j?.error) msg = j.error;
+            }
+          } catch {}
+          throw new Error(msg);
         }
         const data: ApiResponse = await res.json();
         if (!cancelled) {
@@ -89,7 +97,7 @@ export default function AdminDownloads() {
           color: "#856404",
           marginBottom: "1rem"
         }}>
-          {error}
+          {String(error).replace(/<[^>]*>/g, '')}
         </div>
       )}
 

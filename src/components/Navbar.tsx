@@ -28,6 +28,7 @@ export default function Navbar() {
           <Link to="/experience">Experience</Link>
           <Link to="/contact">Contact</Link>
           <Link to="/downloads">Downloads</Link>
+          {user && <Link to="/chat">Chat</Link>}
         </nav>
 
         <div style={{ marginLeft: 16 }}>
