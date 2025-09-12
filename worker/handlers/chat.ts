@@ -108,15 +108,16 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
     // --- MCP: Geo lookup preflight -------------------------------------------------
     // Detect simple geo/location queries and enrich context with accurate coords
     let mcpServiceName: string | null = null;
+    let mcpGeo: { lat: string; lon: string; name: string } | null = null;
     let enrichedMessages = body.messages;
     try {
       const lastUser = [...body.messages].reverse().find((m) => m?.role === "user")?.content || "";
       const q = extractGeoQuery(lastUser);
       if (q) {
-        // Mark that we are invoking the MCP, even if lookup fails, so UI shows "MCP: GeoLocator"
-        mcpServiceName = "GeoLocator";
         const geo = await geocode(q);
         if (geo) {
+          mcpServiceName = "GeoLocator"; // only announce if we actually used it
+          mcpGeo = geo;
           const sys = { role: "system" as const, content: `MCP GeoLocator result for "${q}": lat=${geo.lat}, lon=${geo.lon} (${geo.name}). Use these exact coordinates in your reply.` };
           enrichedMessages = [...body.messages, sys];
         }
@@ -220,6 +221,12 @@ export async function handleChat(req: Request, env: Env, _ctx: any) {
         if (name) {
           DBG(env, "Emit MCP announce", name);
           controller.enqueue(encoder.encode(`event: mcp\ndata: ${JSON.stringify({ name })}\n\n`));
+        }
+        // Also embed a visible snippet as part of the assistant response so the coords are preserved in the transcript
+        if (mcpGeo) {
+          const snippet = `MCP coords: lat=${mcpGeo.lat}, lon=${mcpGeo.lon} (${mcpGeo.name})\n\n`;
+          const deltaChunk = { choices: [{ index: 0, delta: { content: snippet } }] };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(deltaChunk)}\n\n`));
         }
         resetIdle();
       },
@@ -351,8 +358,12 @@ function extractGeoQuery(text: string): string | null {
   const m1 = lower.match(/(?:coordinates|coords)\s+(?:of|for)\s+(.+)/);
   const m2 = lower.match(/location\s+(?:of|for)\s+(.+)/);
   const m3 = lower.match(/where\s+is\s+(.+)/);
-  const m = m1 || m2 || m3;
-  const q = (m ? m[1] : t).trim();
+  // New patterns: "lat/long X", "lat long X", "lat-long X", allow optional "of|for"
+  const m4 = lower.match(/lat(?:itude)?[\s\-\/]+(?:lon|long|longitude)\s+(?:of|for)?\s+(.+)/);
+  const m5 = lower.match(/(?:lon|long|longitude)[\s\-\/]+lat(?:itude)?\s+(?:of|for)?\s+(.+)/);
+  const m = m1 || m2 || m3 || m4 || m5;
+  if (!m) return null;
+  const q = m[1].trim();
   // Strip trailing punctuation
   return q.replace(/[?.!]+$/, "").slice(0, 120);
 }
