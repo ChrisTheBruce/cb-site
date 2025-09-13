@@ -56,6 +56,12 @@ export default function AgentOutline() {
       ) : (
         <div className="space-y-3">
           <div className="text-sm"><span className="font-semibold">Design ID:</span> {result.designId}</div>
+          {result.checkerInitialExplanation && (
+            <div>
+              <div className="font-semibold mb-1">Checker explanation</div>
+              <div className="text-sm opacity-80">{result.checkerInitialExplanation}</div>
+            </div>
+          )}
           {result.outline && (
             <div>
               <div className="font-semibold mb-1">Initial Outline</div>
@@ -91,4 +97,3 @@ function CloseToChat({ onClose }) {
     </button>
   );
 }
-

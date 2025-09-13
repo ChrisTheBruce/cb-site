@@ -42,7 +42,7 @@ export default function AgentDesigner() {
     setSubmitting(true);
     setError("");
     try {
-      const res = await startOutlineDesign(idea);
+      const res = await startOutlineDesign(idea, check?.explanation || "");
       setResult(res);
     } catch (err) {
       setError(err.message || String(err));
@@ -100,6 +100,12 @@ export default function AgentDesigner() {
         <div className="space-y-3">
           <p className="opacity-80">Outline agent responded.</p>
           <div className="text-sm"><span className="font-semibold">Design ID:</span> {result.designId}</div>
+          {result.checkerInitialExplanation && (
+            <div>
+              <div className="font-semibold mb-1">Checker explanation</div>
+              <div className="text-sm opacity-80">{result.checkerInitialExplanation}</div>
+            </div>
+          )}
           {result.outline && (
             <div>
               <div className="font-semibold mb-1">Initial Outline</div>

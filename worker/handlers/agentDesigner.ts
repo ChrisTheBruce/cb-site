@@ -2,6 +2,7 @@ import { json, bad } from "../lib/responses";
 import { rid } from "../lib/ids";
 import { chatOnce } from "../lib/llm";
 import { renderCheckerInitialPrompt } from "../prompts/checker_initial_check";
+import { renderOutlinePrompt } from "../prompts/outline_generation";
 
 export async function start(request: Request): Promise<Response> {
   try {
@@ -58,15 +59,38 @@ export async function check(request: Request, env?: any): Promise<Response> {
   }
 }
 
-export async function outline(request: Request): Promise<Response> {
+export async function outline(request: Request, env?: any): Promise<Response> {
   try {
-    const body = await request.json().catch(() => null) as { idea?: string } | null;
-    const idea = body?.idea?.trim();
-    if (!idea) {
-      return bad(400, "missing idea", rid());
-    }
-    // Deterministic outline scaffold
+    const body = await request.json().catch(() => null) as { idea?: string; checkerExplanation?: string; checker_initial_response?: string } | null;
+    const idea = (body?.idea || "").trim();
+    const checkerText = (body?.checkerExplanation || body?.checker_initial_response || "").trim();
+    if (!idea) return bad(400, "missing idea", rid());
+
     const designId = rid();
+
+    if (env) {
+      try {
+        const prompt = renderOutlinePrompt(idea, checkerText || "(checker approved)");
+        const answer = await chatOnce(env, [
+          { role: 'system', content: 'You are the Outline agent. Produce a clear high-level solution outline.' },
+          { role: 'user', content: prompt },
+        ], { model: 'gpt-4o-mini', temperature: 0.3 });
+
+        // Keep questions optional for now; provide a few defaults to maintain UI
+        const questions = [
+          "Confirm any compliance or regulatory constraints",
+          "List key systems to integrate",
+          "Define success metrics and SLAs",
+          "Identify any data privacy restrictions",
+        ];
+        const checkerReview = runCheck(idea, answer);
+        return json({ ok: true, designId, outline: answer, questions, checkerReview, checkerInitialExplanation: checkerText || "" });
+      } catch (e: any) {
+        // fall through to deterministic fallback
+      }
+    }
+
+    // Fallback deterministic outline
     const outlineText = [
       "Agents: Consultant, Checker, Outline, Developer",
       "Flow:",
@@ -83,7 +107,7 @@ export async function outline(request: Request): Promise<Response> {
       "What SLAs or success metrics define done?",
     ];
     const checkerReview = runCheck(idea, outlineText);
-    return json({ ok: true, designId, outline: outlineText, questions, checkerReview });
+    return json({ ok: true, designId, outline: outlineText, questions, checkerReview, checkerInitialExplanation: checkerText || "" });
   } catch (err: any) {
     return bad(500, err?.message || "internal error", rid());
   }

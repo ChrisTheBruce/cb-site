@@ -6,6 +6,7 @@ export type OutlineStartResponse = {
   outline: string;
   questions: string[];
   checkerReview: { valid: boolean; explanation: string };
+  checkerInitialExplanation?: string;
 };
 
 export type CheckResponse = {
@@ -27,11 +28,11 @@ export async function startDesign(idea: string): Promise<StartDesignResponse> {
   return (await resp.json()) as StartDesignResponse;
 }
 
-export async function startOutlineDesign(idea: string): Promise<OutlineStartResponse> {
+export async function startOutlineDesign(idea: string, checkerExplanation?: string): Promise<OutlineStartResponse> {
   const resp = await fetch("/api/design/outline", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea }),
+    body: JSON.stringify({ idea, checkerExplanation }),
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
