@@ -58,7 +58,12 @@ export default function AgentOutline() {
         </form>
       ) : (
         <div className="space-y-3">
-          <div className="text-sm"><span className="font-semibold">Design ID:</span> {result.designId}</div>
+          <div className="text-sm">
+            <span className="font-semibold">Design ID:</span> {result.designId}
+            {user ? (
+              <span> — <span className="font-semibold">User:</span> {user.name || user.email || user.id}</span>
+            ) : null}
+          </div>
           {result.checkerInitialExplanation && (
             <div>
               <div className="font-semibold mb-1">Checker explanation</div>

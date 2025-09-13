@@ -102,19 +102,19 @@ export default function AgentDesigner() {
       ) : (
         <div className="space-y-3">
           <p className="opacity-80">Outline agent responded.</p>
-          <div className="text-sm"><span className="font-semibold">Design ID:</span> {result.designId}</div>
+          <div className="text-sm">
+            <span className="font-semibold">Design ID:</span> {result.designId}
+            {user ? (
+              <span> — <span className="font-semibold">User:</span> {user.name || user.email || user.id}</span>
+            ) : null}
+          </div>
           {result.checkerInitialExplanation && (
             <div>
               <div className="font-semibold mb-1">Checker explanation</div>
               <div className="text-sm opacity-80">{result.checkerInitialExplanation}</div>
             </div>
           )}
-          {result.outline && (
-            <div>
-              <div className="font-semibold mb-1">Initial Outline</div>
-              <pre style={{ whiteSpace: 'pre-wrap', background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}>{result.outline}</pre>
-            </div>
-          )}
+          {/* remove old plain pre outline block; shown below as Markdown */}
           {Array.isArray(result.questions) && result.questions.length > 0 && (
             null
           )}

@@ -114,27 +114,13 @@ export default function Chat() {
         style={{
           display: "flex",
           flexDirection: isSmall ? "column" : "row",
-          justifyContent: "space-between",
+          justifyContent: "flex-start",
           alignItems: isSmall ? "stretch" : "center",
           gap: 8,
           marginBottom: 12,
         }}
       >
         <h1 className="text-2xl font-bold">Chat</h1>
-        <button
-          onClick={() => navigate("/agent-designer")}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: "1px solid #0b5cff",
-            background: "#0b5cff",
-            color: "#fff",
-            cursor: "pointer",
-            width: isSmall ? "100%" : "auto",
-          }}
-        >
-          Design an Agent
-        </button>
       </div>
 
       <div
@@ -206,6 +192,23 @@ export default function Chat() {
           {working ? "Sending…" : "Send"}
         </button>
       </form>
+
+      {/* Action buttons under the prompt (left-aligned) */}
+      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => navigate("/agent-designer")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #0b5cff",
+            background: "#0b5cff",
+            color: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          Design an Agent
+        </button>
+      </div>
     </div>
   );
 }
