@@ -58,7 +58,7 @@
         "bindings": [
           { "name": "DOWNLOAD_LOG", "class_name": "DownloadLog" }
         ]
-      }
+      },"name": "cb-site"
     }
   }
 
