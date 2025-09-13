@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { startOutlineDesign, updateOutlineDesign } from "../services/agentDesign";
@@ -148,8 +148,6 @@ export default function AgentOutline() {
 }
 
 function ProcessingDots({ label = 'Processing' }) {
-  const React = require('react');
-  const { useEffect, useState } = React;
   const [dots, setDots] = useState('');
   useEffect(() => {
     const id = setInterval(() => {
