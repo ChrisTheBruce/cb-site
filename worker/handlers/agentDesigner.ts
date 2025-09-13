@@ -17,15 +17,11 @@ export async function start(request: Request): Promise<Response> {
 
 // Simple deterministic checker stub
 function runCheck(idea?: string | null, outline?: string | null) {
-  const txt = (outline || idea || "").toLowerCase();
-  const valid = !!txt && (txt.includes("agent") || txt.includes("automate") || txt.length > 24);
+  const txt = (outline || idea || "").trim();
   const what = outline ? "outline" : "idea";
-  const explanation = !txt
-    ? `No ${what} provided to evaluate.`
-    : valid
-      ? `The ${what} appears suitable for agent-based design based on keywords/complexity.`
-      : `The ${what} may be too vague for agent use; add goals, roles, and flows.`;
-  return { valid, explanation };
+  if (!txt) return { valid: false, explanation: `No ${what} provided to evaluate.` };
+  // Default to yes for now (requested behavior)
+  return { valid: true, explanation: `Checker approved the ${what} (default allow).` };
 }
 
 export async function check(request: Request): Promise<Response> {

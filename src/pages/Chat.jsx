@@ -109,7 +109,7 @@ export default function Chat() {
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16, paddingTop: 24, display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 140px)' }}>
+    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16, paddingTop: 72, display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 140px)' }}>
       <div
         style={{
           display: "flex",

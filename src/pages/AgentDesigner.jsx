@@ -2,12 +2,13 @@
 import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { startOutlineDesign } from "../services/agentDesign";
+import { startOutlineDesign, checkDesign } from "../services/agentDesign";
 
 export default function AgentDesigner() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [idea, setIdea] = useState("");
+  const [check, setCheck] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -27,7 +28,20 @@ export default function AgentDesigner() {
     setSubmitting(true);
     setError("");
     try {
-      // Consultant collects the idea and passes it to the Outline agent
+      // Consultant sends to Checker first
+      const checkRes = await checkDesign({ idea });
+      setCheck(checkRes);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleStartOutline() {
+    setSubmitting(true);
+    setError("");
+    try {
       const res = await startOutlineDesign(idea);
       setResult(res);
     } catch (err) {
@@ -44,7 +58,7 @@ export default function AgentDesigner() {
       </div>
       <h1 className="text-2xl font-bold mb-1">Consultant</h1>
       <p className="mb-4 opacity-80 text-sm">Describe your agent idea. The Consultant will pass it to the Outline agent, which returns a design ID and an initial outline.</p>
-      {!result ? (
+      {!check && !result ? (
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
             className="w-full border rounded p-2"
@@ -58,10 +72,30 @@ export default function AgentDesigner() {
             className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
             disabled={submitting || !idea.trim()}
           >
-            {submitting ? "Starting..." : "Start Outline"}
+            {submitting ? "Checking..." : "Send to Checker"}
           </button>
           {error && <div className="text-red-600 text-sm">{error}</div>}
         </form>
+      ) : !result ? (
+        <div className="space-y-3">
+          <div className="font-semibold">Checker result</div>
+          <div>
+            <span className="font-semibold">Approved:</span> {String(check?.valid)}
+          </div>
+          {check?.explanation && (
+            <div className="text-sm opacity-80">{check.explanation}</div>
+          )}
+          {check?.valid && (
+            <button
+              onClick={handleStartOutline}
+              className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+              disabled={submitting}
+            >
+              {submitting ? "Starting…" : "Start Outline"}
+            </button>
+          )}
+          {error && <div className="text-red-600 text-sm">{error}</div>}
+        </div>
       ) : (
         <div className="space-y-3">
           <p className="opacity-80">Outline agent responded.</p>
