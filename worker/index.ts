@@ -10,6 +10,7 @@ export { DownloadLog } from "./do/DownloadLog";
 import * as auth from "./handlers/auth";
 import * as chat from "./handlers/chat";
 import * as notify from "./handlers/notify";
+import * as design from "./handlers/agentDesigner";
 import { setDownloadEmailCookie, clearDownloadEmailCookie } from "./handlers/email";
 import { handleHealth } from "./handlers/health";
 import { DBG } from "./env";
@@ -121,6 +122,11 @@ export default {
           status,
           headers: { "content-type": "application/json" },
         });
+      }
+
+      // Agent design: start session
+      if (pathname === "/api/design/start" && request.method === "POST") {
+        return await design.start(request);
       }
 
       // Chat stream (both GET diagnostics and POST chat)
