@@ -5,7 +5,7 @@ import styles from './HomeHero.module.css';
 export default function HomeHero() {
   return (
     <section className={styles.hero}>
-      <div className={`${styles.inner} mx-auto max-w-6xl px-4 py-20 md:py-28 grid md:grid-cols-2 gap-10 items-center`}>
+      <div className={`${styles.inner} mx-auto max-w-6xl px-4 py-16 md:py-28 grid md:grid-cols-2 gap-8 md:gap-10 items-center`}>
         {/* Left column (copy) */}
         <div className={styles.copy}>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">

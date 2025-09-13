@@ -41,7 +41,8 @@
       "vars": { "DEBUG_MODE": "true" }
     },
     "staging": {
-      "name": "staging-cb-site",
+      // Use the same service name so workers.dev URL is cb-site.chris-brighouse.workers.dev
+      "name": "cb-site",
       // Staging without Durable Objects bindings; assets still served from dist
       "vars": { "DEBUG_MODE": "true" },
       "assets": {

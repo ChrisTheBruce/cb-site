@@ -85,6 +85,16 @@ export default function Chat() {
     }
   }, [messages, input]);
 
+  // Simple small-screen detection to adjust layout
+  const [isSmall, setIsSmall] = useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const update = () => setIsSmall(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+
   // While we don't know auth state yet, render nothing (or show a lightweight spinner)
   if (loading) {
     return (
@@ -98,7 +108,7 @@ export default function Chat() {
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
+    <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16, display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 140px)' }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h1 className="text-2xl font-bold">Chat</h1>
       </div>
@@ -109,8 +119,8 @@ export default function Chat() {
           border: "1px solid #ddd",
           borderRadius: 8,
           padding: 12,
-          minHeight: 320,
-          maxHeight: "60vh",
+          minHeight: isSmall ? 240 : 320,
+          maxHeight: isSmall ? '60vh' : '65vh',
           overflowY: "auto",
           background: "#fff",
         }}
@@ -136,13 +146,26 @@ export default function Chat() {
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={onSend} className="composer" style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <form
+        onSubmit={onSend}
+        className="composer"
+        style={{
+          display: "flex",
+          flexDirection: isSmall ? 'column' : 'row',
+          gap: 8,
+          marginTop: 12,
+          position: 'sticky',
+          bottom: 0,
+          background: '#f8fafc00',
+          paddingBottom: isSmall ? 4 : 0,
+        }}
+      >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type a message…"
           disabled={working}
-          style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ccc" }}
+          style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ccc", width: isSmall ? '100%' : undefined }}
         />
         <button
           disabled={working || !input.trim()}
@@ -153,6 +176,7 @@ export default function Chat() {
             background: working ? "#94b4ff" : "#0b5cff",
             color: "#fff",
             cursor: working ? "default" : "pointer",
+            width: isSmall ? '100%' : undefined,
           }}
         >
           {working ? "Sending…" : "Send"}
