@@ -1,12 +1,13 @@
 // src/pages/Chat.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { streamChat } from "../services/chat";
 
 export default function Chat() {
   // ---- Auth guard inside the component ----
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
 
   // Chat state
   const [messages, setMessages] = useState([
@@ -109,8 +110,31 @@ export default function Chat() {
 
   return (
     <div className="chat-page" style={{ maxWidth: 900, margin: "0 auto", padding: 16, display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 140px)' }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isSmall ? "column" : "row",
+          justifyContent: "space-between",
+          alignItems: isSmall ? "stretch" : "center",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
         <h1 className="text-2xl font-bold">Chat</h1>
+        <button
+          onClick={() => navigate("/agent-designer")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #0b5cff",
+            background: "#0b5cff",
+            color: "#fff",
+            cursor: "pointer",
+            width: isSmall ? "100%" : "auto",
+          }}
+        >
+          Design an Agent
+        </button>
       </div>
 
       <div
