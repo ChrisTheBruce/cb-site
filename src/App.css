@@ -1,8 +1,10 @@
+/* Keep root container neutral so pages control their own layout.
+   This avoids cramped mobile layouts and unintended centered text. */
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: initial;
 }
 
 .logo {
