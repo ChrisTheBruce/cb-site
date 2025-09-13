@@ -7,6 +7,12 @@ Key Technologies
 - Worker runtime: Cloudflare Workers (TypeScript)
 - Deployment: wrangler (Production environment), assets bound as ASSETS
 
+Preview/Staging
+- Staging service: `staging-cb-site` (separate Worker service)
+- Preview URL: `https://staging-cb-site.chris-brighouse.workers.dev/`
+- No Durable Objects in staging (by design) — notify/admin endpoints will report storage unavailable.
+- Production remains bound to domain routes and has the DO binding.
+
 How It’s Wired Now
 - No itty-router. All API routing is explicit in worker/index.ts inside fetch(). This avoided prior hangs and simplifies reasoning/debugging.
 - Worker routes (Cloudflare Dashboard → Worker → Triggers):
@@ -14,12 +20,22 @@ How It’s Wired Now
   - www.chrisbrighouse.com/api/*
 - Optionally, a broader site route may also exist for everything else; the API routes above must exist to guarantee API requests reach the Worker.
 
+Recent Additions
+- `GET /api/health` lightweight health check for quick reachability tests.
+- `public/cb-index.html` is a pure static reachability page (no JS) to isolate network vs. app boot issues.
+- Footer shows "(preview)" label on non-production hosts (e.g., workers.dev) to clearly mark preview builds.
+- Mobile improvements:
+  - Neutralized global `#root` CSS so pages control layout (fixes cramped centered layout on phones).
+  - Responsive Navbar with mobile menu.
+  - Home hero spacing tweaked for small screens.
+  - Chat composer stacks and remains usable on small viewports; transcript height tuned.
+
 Worker Entry (worker/index.ts)
 - Primary responsibilities:
   - Handle /api/* with explicit if/else routing
   - CORS preflight for API (OPTIONS)
   - Static asset serving via env.ASSETS (Vite output)
-  - Gate /downloads/* when no email cookie is present
+  - Gate /downloads/* when no email cookie is presenty
 
 API Endpoints (explicit routing)
 - Auth, 
@@ -77,21 +93,41 @@ Environment & Config
 - wrangler.jsonc (Production environment):
   - main: worker/index.ts
   - assets: { directory: dist, binding: ASSETS }
-  - durable_objects: { bindings: [{ name: DOWNLOAD_LOG, class_name: DownloadLog }] }
+  - durable_objects: configured under env.production only
   - migrations: includes DownloadLog
   - routes: set in Dashboard (ensure /api/* attached to Production)
   - vars of note: AI_GATEWAY_BASE, DEBUG_MODE
 - worker/env.ts defines helper DBG(), isDebug(), and the Env type used across handlers.
 
+wrangler.jsonc Structure (refactored)
+- Top-level: main, assets, migrations, vars.
+- `env.production`:
+  - `routes`: domain routes for `chrisbrighouse.com/api/*` and `www.chrisbrighouse.com/api/*`.
+  - `durable_objects.bindings`: `[ { name: DOWNLOAD_LOG, class_name: DownloadLog } ]`.
+  - `vars`: includes `AI_GATEWAY_BASE`, `DEBUG_MODE`.
+- `env.staging` (service: `staging-cb-site`):
+  - No DO bindings.
+  - `vars`: includes `AI_GATEWAY_BASE`, `DEBUG_MODE`.
+  - Uses workers.dev URL: `https://staging-cb-site.chris-brighouse.workers.dev/`.
+
 Local Scripts
 - npm run dev → Vite dev server for the frontend
 - npm run build → builds the frontend to dist/
+- npm run lighthouse:staging → runs Lighthouse against staging workers.dev (outputs to `lighthouse/`)
 
 Deploy
 - Explicitly deploy to Production to avoid env mismatch warnings:
   - wrangler deploy --env=production
   - Verify in Dashboard → Worker → Environment: Production → Deployments
   - Ensure Triggers → Routes include the two /api/* routes in Production
+
+Staging Deploy (workers.dev)
+- Build: `npm run build`
+- Deploy: `wrangler deploy --env=staging`
+- Preview URLs:
+  - Home: `https://staging-cb-site.chris-brighouse.workers.dev/`
+  - Health: `https://staging-cb-site.chris-brighouse.workers.dev/api/health`
+  - Static: `https://staging-cb-site.chris-brighouse.workers.dev/cb-index.html`
 
 Sanity Tests (curl)
 - Ping: curl -i -X POST https://www.chrisbrighouse.com/api/auth/ping

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lighthouse:staging": "mkdir -p lighthouse && npx -y lighthouse https://staging-cb-site.chris-brighouse.workers.dev/ --chrome-flags='--headless=new' --only-categories=performance,accessibility,best-practices,seo --output=json --output=html --output-path=./lighthouse/staging-report"
   },
   "dependencies": {
     "react": "^19.1.1",

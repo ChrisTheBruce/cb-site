@@ -5,7 +5,8 @@ export default function Footer() {
   const isPreview = (() => {
     try {
       const host = window.location.hostname || ''
-      return /\.workers\.dev$/i.test(host)
+      const prodHosts = new Set(['www.chrisbrighouse.com', 'chrisbrighouse.com'])
+      return !prodHosts.has(host)
     } catch {
       return false
     }

@@ -10,10 +10,7 @@
     "binding": "ASSETS"
   },
 
-  "routes": [
-    { "pattern": "chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" },
-    { "pattern": "www.chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" }
-  ],
+  // Routes should apply only to the production environment; moved under env.production
 
   // Optional but handy
   "observability": { "enabled": true },
@@ -23,11 +20,7 @@
       "DEBUG_MODE": "true"
   },
 
-  "durable_objects": {
-    "bindings": [
-      { "name": "DOWNLOAD_LOG", "class_name": "DownloadLog" }
-    ]
-  },
+  // Durable Objects bindings now live only under env.production
 
   "migrations": [
     {
@@ -41,10 +34,14 @@
       "vars": { "DEBUG_MODE": "true" }
     },
     "staging": {
-      // Use the same service name so workers.dev URL is cb-site.chris-brighouse.workers.dev
-      "name": "cb-site",
+      // Use a separate Worker service dedicated to staging previews
+      "name": "staging-cb-site",
       // Staging without Durable Objects bindings; assets still served from dist
-      "vars": { "DEBUG_MODE": "true" },
+      "vars": {
+        "DEBUG_MODE": "true",
+        // Mirror gateway base so chat works in staging
+        "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/"
+      },
       "assets": {
         "directory": "dist",
         "binding": "ASSETS"
@@ -52,7 +49,16 @@
       "durable_objects": { "bindings": [] }
     },
     "production": {
-      "vars": { "DEBUG_MODE": "true" }
+      "vars": { "DEBUG_MODE": "true", "AI_GATEWAY_BASE": "https://gateway.ai.cloudflare.com/v1/6809dd00f7144b0e15d82494016f4459/cb-openai/" },
+      "routes": [
+        { "pattern": "chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" },
+        { "pattern": "www.chrisbrighouse.com/api/*", "zone_name": "chrisbrighouse.com" }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "DOWNLOAD_LOG", "class_name": "DownloadLog" }
+        ]
+      }
     }
   }
 
