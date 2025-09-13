@@ -124,9 +124,22 @@ export default {
         });
       }
 
-      // Agent design: start session
+      // Agent design: start session (auth required)
       if (pathname === "/api/design/start" && request.method === "POST") {
+        // Enforce auth server-side
+        const authRes = await auth.me({ req: request, env });
+        if (authRes.status !== 200) return authRes; // 401/500 passthrough
         return await design.start(request);
+      }
+
+      // Agent design: checker stub
+      if (pathname === "/api/design/check" && request.method === "POST") {
+        return await design.check(request);
+      }
+
+      // Agent design: outline stub
+      if (pathname === "/api/design/outline" && request.method === "POST") {
+        return await design.outline(request);
       }
 
       // Chat stream (both GET diagnostics and POST chat)
