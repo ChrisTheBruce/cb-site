@@ -8,6 +8,12 @@ export type OutlineStartResponse = {
   checkerReview: { valid: boolean; explanation: string };
 };
 
+export type CheckResponse = {
+  ok: boolean;
+  valid: boolean;
+  explanation: string;
+};
+
 export async function startDesign(idea: string): Promise<StartDesignResponse> {
   const resp = await fetch("/api/design/start", {
     method: "POST",
@@ -32,4 +38,17 @@ export async function startOutlineDesign(idea: string): Promise<OutlineStartResp
     throw new Error(`Outline ${resp.status}: ${text.slice(0, 200)}`);
   }
   return (await resp.json()) as OutlineStartResponse;
+}
+
+export async function checkDesign(payload: { idea?: string; outline?: string }): Promise<CheckResponse> {
+  const resp = await fetch("/api/design/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Check ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  return (await resp.json()) as CheckResponse;
 }

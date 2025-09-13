@@ -15,6 +15,9 @@ import Chat from "./pages/Chat.jsx";
 // New page:
 import AdminDownloads from "./pages/AdminDownloads.tsx";
 import AgentDesigner from "./pages/AgentDesigner.jsx";
+import AgentChecker from "./pages/AgentChecker.jsx";
+import AgentOutline from "./pages/AgentOutline.jsx";
+import AgentDeveloper from "./pages/AgentDeveloper.jsx";
 
 function ChatOnlyLogsButton() {
   const location = useLocation();
@@ -64,6 +67,9 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/agent-designer" element={<AgentDesigner />} />
+          <Route path="/agent-checker" element={<AgentChecker />} />
+          <Route path="/agent-outline" element={<AgentOutline />} />
+          <Route path="/agent-developer" element={<AgentDeveloper />} />
           {/* Chat2 removed */}
 
           {/* Admin logs (backend enforces auth) */}

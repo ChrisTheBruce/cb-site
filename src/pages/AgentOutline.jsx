@@ -1,10 +1,9 @@
-
 import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { startOutlineDesign } from "../services/agentDesign";
 
-export default function AgentDesigner() {
+export default function AgentOutline() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [idea, setIdea] = useState("");
@@ -12,22 +11,14 @@ export default function AgentDesigner() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">
-        Loading your session…
-      </div>
-    );
-  }
-
+  if (loading) return <div className="flex items-center justify-center h-[60vh] text-sm opacity-80">Loading your session…</div>;
   if (!user) return <Navigate to="/login" replace />;
 
-  async function handleSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault();
     setSubmitting(true);
     setError("");
     try {
-      // Consultant collects the idea and passes it to the Outline agent
       const res = await startOutlineDesign(idea);
       setResult(res);
     } catch (err) {
@@ -42,14 +33,14 @@ export default function AgentDesigner() {
       <div style={{ position: 'absolute', right: 16, top: 16 }}>
         <CloseToChat onClose={() => navigate('/chat')} />
       </div>
-      <h1 className="text-2xl font-bold mb-1">Consultant</h1>
-      <p className="mb-4 opacity-80 text-sm">Describe your agent idea. The Consultant will pass it to the Outline agent, which returns a design ID and an initial outline.</p>
+      <h1 className="text-2xl font-bold mb-1">Outline</h1>
+      <p className="mb-4 opacity-80 text-sm">Draft the high-level design and surface questions. A design ID will be created.</p>
       {!result ? (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-3">
           <textarea
             className="w-full border rounded p-2"
             rows={4}
-            placeholder="Describe your agent idea..."
+            placeholder="Describe the idea to outline…"
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
           />
@@ -58,13 +49,12 @@ export default function AgentDesigner() {
             className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
             disabled={submitting || !idea.trim()}
           >
-            {submitting ? "Starting..." : "Start Outline"}
+            {submitting ? "Outlining…" : "Create Outline"}
           </button>
           {error && <div className="text-red-600 text-sm">{error}</div>}
         </form>
       ) : (
         <div className="space-y-3">
-          <p className="opacity-80">Outline agent responded.</p>
           <div className="text-sm"><span className="font-semibold">Design ID:</span> {result.designId}</div>
           {result.outline && (
             <div>
@@ -101,3 +91,4 @@ function CloseToChat({ onClose }) {
     </button>
   );
 }
+
