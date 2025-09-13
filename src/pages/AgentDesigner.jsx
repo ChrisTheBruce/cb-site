@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { startOutlineDesign, checkDesign } from "../services/agentDesign";
+import { renderBasicMarkdown } from "../utils/markdown";
 
 export default function AgentDesigner() {
   const { user, loading } = useAuth();
@@ -10,6 +11,8 @@ export default function AgentDesigner() {
   const [idea, setIdea] = useState("");
   const [check, setCheck] = useState(null);
   const [result, setResult] = useState(null);
+  const [answers, setAnswers] = useState("");
+  const [answersSaved, setAnswersSaved] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -113,16 +116,45 @@ export default function AgentDesigner() {
             </div>
           )}
           {Array.isArray(result.questions) && result.questions.length > 0 && (
-            <div>
+            null
+          )}
+          {/* Two-column layout: Outline (left), Questions + Answers (right) */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 460px', minWidth: 300 }}>
+              <div className="font-semibold mb-1">Initial Outline</div>
+              <div
+                style={{ background: '#fff', padding: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                dangerouslySetInnerHTML={{ __html: renderBasicMarkdown(result.outline || '') }}
+              />
+            </div>
+            <div style={{ flex: '1 1 320px', minWidth: 260 }}>
               <div className="font-semibold mb-1">Questions</div>
               <ul className="list-disc ml-5">
-                {result.questions.map((q, i) => (<li key={i}>{q}</li>))}
+                {(result.questions || []).map((q, i) => (<li key={i}>{q}</li>))}
               </ul>
+              <div className="mt-3">
+                <label className="font-semibold block mb-1">Your answers</label>
+                <textarea
+                  className="w-full border rounded p-2"
+                  rows={6}
+                  placeholder="Write your answers to the questions here…"
+                  value={answers}
+                  onChange={(e) => { setAnswers(e.target.value); setAnswersSaved(false); }}
+                />
+                <button
+                  onClick={() => setAnswersSaved(true)}
+                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+                  disabled={!answers.trim()}
+                >
+                  Submit
+                </button>
+                {answersSaved && (
+                  <div className="text-sm opacity-80 mt-1">Saved locally — will send to Outline agent next.</div>
+                )}
+              </div>
             </div>
-          )}
-          <div>
-            <CloseToChat onClose={() => navigate('/chat')} />
           </div>
+          <div className="mt-3"><CloseToChat onClose={() => navigate('/chat')} /></div>
         </div>
       )}
     </div>
