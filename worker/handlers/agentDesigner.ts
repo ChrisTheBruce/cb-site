@@ -51,6 +51,7 @@ export async function outline(request: Request): Promise<Response> {
       return bad(400, "missing idea", rid());
     }
     // Deterministic outline scaffold
+    const designId = rid();
     const outlineText = [
       "Agents: Consultant, Checker, Outline, Developer",
       "Flow:",
@@ -67,7 +68,7 @@ export async function outline(request: Request): Promise<Response> {
       "What SLAs or success metrics define done?",
     ];
     const checkerReview = runCheck(idea, outlineText);
-    return json({ ok: true, outline: outlineText, questions, checkerReview });
+    return json({ ok: true, designId, outline: outlineText, questions, checkerReview });
   } catch (err: any) {
     return bad(500, err?.message || "internal error", rid());
   }
