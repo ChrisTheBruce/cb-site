@@ -22,7 +22,7 @@ Worker Entry (worker/index.ts)
   - Gate /downloads/* when no email cookie is present
 
 API Endpoints (explicit routing)
-- Auth
+- Auth, 
   - POST /api/auth/login → worker/handlers/auth.login
   - GET  /api/auth/me → worker/handlers/auth.me
   - POST /api/auth/logout → worker/handlers/auth.logout

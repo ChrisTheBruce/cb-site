@@ -41,6 +41,7 @@
       "vars": { "DEBUG_MODE": "true" }
     },
     "staging": {
+      "name": "staging-cb-site",
       // Staging without Durable Objects bindings; assets still served from dist
       "vars": { "DEBUG_MODE": "true" },
       "assets": {
