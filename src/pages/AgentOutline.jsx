@@ -12,6 +12,7 @@ export default function AgentOutline() {
   const [answers, setAnswers] = useState("");
   const [answersSaved, setAnswersSaved] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [iteration, setIteration] = useState(0);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,6 +26,7 @@ export default function AgentOutline() {
     try {
       const res = await startOutlineDesign(idea);
       setResult(res);
+      setIteration(1);
     } catch (err) {
       setError(err.message || String(err));
     } finally {
@@ -48,6 +50,7 @@ export default function AgentOutline() {
       setResult(updated);
       setAnswers("");
       setAnswersSaved(true);
+      setIteration((n) => Math.min(5, (n || 1) + 1));
     } catch (err) {
       setError(err.message || String(err));
     } finally {
@@ -105,6 +108,7 @@ export default function AgentOutline() {
             </div>
             <div style={{ flex: '1 1 320px', minWidth: 260 }}>
               <div className="font-semibold mb-1">Questions</div>
+              <div className="text-xs opacity-70 mb-1">Iterations: {Math.max(1, iteration || 1)}/5</div>
               <ul className="list-disc ml-5">
                 {(result.questions || []).map((q, i) => (<li key={i}>{q}</li>))}
               </ul>
@@ -120,10 +124,13 @@ export default function AgentOutline() {
                 <button
                   onClick={onSubmitAnswers}
                   className="mt-2 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-                  disabled={!answers.trim() || updating}
+                  disabled={!answers.trim() || updating || iteration >= 5}
                 >
                   {updating ? 'Submitting…' : 'Submit'}
                 </button>
+                {iteration >= 5 && (
+                  <div className="text-xs opacity-70 mt-1">Maximum iterations reached.</div>
+                )}
                 {answersSaved && (
                   <div className="text-sm opacity-80 mt-1">Outline updated.</div>
                 )}
