@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { startOutlineDesign, checkDesign } from "../services/agentDesign";
+import { startOutlineDesign, checkDesign, updateOutlineDesign } from "../services/agentDesign";
 import { renderBasicMarkdown } from "../utils/markdown";
 
 export default function AgentDesigner() {
@@ -13,6 +13,7 @@ export default function AgentDesigner() {
   const [result, setResult] = useState(null);
   const [answers, setAnswers] = useState("");
   const [answersSaved, setAnswersSaved] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -54,13 +55,40 @@ export default function AgentDesigner() {
     }
   }
 
+  async function onSubmitAnswers(e) {
+    e?.preventDefault?.();
+    if (!result?.designId || !result?.outline || !answers.trim()) return;
+    try {
+      setUpdating(true);
+      const updated = await updateOutlineDesign({
+        designId: result.designId,
+        idea,
+        outline: result.outline,
+        answers,
+        questions: result.questions || [],
+        checkerExplanation: result.checkerInitialExplanation || '',
+      });
+      setResult(updated);
+      setAnswers("");
+      setAnswersSaved(true);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 16, position: 'relative' }}>
       <div style={{ position: 'absolute', right: 16, top: 16 }}>
         <CloseToChat onClose={() => navigate('/chat')} />
       </div>
       <h1 className="text-2xl font-bold mb-1">Consultant</h1>
-      <p className="mb-4 opacity-80 text-sm">Describe your agent idea. The Consultant will pass it to the Outline agent, which returns a design ID and an initial outline.</p>
+      {!result ? (
+        <p className="mb-4 opacity-80 text-sm">Describe your agent idea. The Consultant will pass it to the Outline agent, which returns a design ID and an initial outline.</p>
+      ) : (
+        <p className="mb-4 opacity-80 text-sm">Please review this outline, answer any questions or make comments and click submit to update the Outline.</p>
+      )}
       {!check && !result ? (
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
@@ -142,18 +170,19 @@ export default function AgentDesigner() {
                   onChange={(e) => { setAnswers(e.target.value); setAnswersSaved(false); }}
                 />
                 <button
-                  onClick={() => setAnswersSaved(true)}
+                  onClick={onSubmitAnswers}
                   className="mt-2 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-                  disabled={!answers.trim()}
+                  disabled={!answers.trim() || updating}
                 >
-                  Submit
+                  {updating ? 'Submitting…' : 'Submit'}
                 </button>
                 {answersSaved && (
-                  <div className="text-sm opacity-80 mt-1">Saved locally — will send to Outline agent next.</div>
+                  <div className="text-sm opacity-80 mt-1">Outline updated.</div>
                 )}
               </div>
             </div>
           </div>
+          {updating && (<ProcessingDots label="Updating outline" />)}
           <div className="mt-3"><CloseToChat onClose={() => navigate('/chat')} /></div>
         </div>
       )}
@@ -172,4 +201,23 @@ function CloseToChat({ onClose }) {
       Close
     </button>
   );
+}
+
+function ProcessingDots({ label = 'Processing' }) {
+  const React = require('react');
+  const { useEffect, useState } = React;
+  const [dots, setDots] = useState('');
+  useEffect(() => {
+    const id = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? '' : d + '.'));
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="text-sm opacity-80 mt-2">{label}{dots}</div>
+  );
+}
+
+async function onSubmitAnswers(e) {
+  e?.preventDefault?.();
 }

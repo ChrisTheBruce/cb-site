@@ -15,6 +15,15 @@ export type CheckResponse = {
   explanation: string;
 };
 
+export type OutlineUpdateRequest = {
+  designId: string;
+  idea?: string;
+  outline: string;
+  answers: string;
+  questions?: string[];
+  checkerExplanation?: string;
+};
+
 export async function startDesign(idea: string): Promise<StartDesignResponse> {
   const resp = await fetch("/api/design/start", {
     method: "POST",
@@ -52,4 +61,17 @@ export async function checkDesign(payload: { idea?: string; outline?: string }):
     throw new Error(`Check ${resp.status}: ${text.slice(0, 200)}`);
   }
   return (await resp.json()) as CheckResponse;
+}
+
+export async function updateOutlineDesign(payload: OutlineUpdateRequest): Promise<OutlineStartResponse> {
+  const resp = await fetch("/api/design/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Update ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  return (await resp.json()) as OutlineStartResponse;
 }

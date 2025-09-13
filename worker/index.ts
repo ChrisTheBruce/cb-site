@@ -146,6 +146,13 @@ export default {
         return await design.outline(request, env as any);
       }
 
+      // Agent design: outline update (auth required)
+      if (pathname === "/api/design/update" && request.method === "POST") {
+        const authRes = await auth.me({ req: request, env });
+        if (authRes.status !== 200) return authRes;
+        return await design.updateOutline(request, env as any);
+      }
+
       // Chat stream (both GET diagnostics and POST chat)
       if (pathname === "/api/chat/stream" && (request.method === "GET" || request.method === "POST")) {
         return await chat.handleChat(request, env as any, ctx);

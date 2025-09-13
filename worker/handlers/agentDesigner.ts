@@ -3,6 +3,7 @@ import { rid } from "../lib/ids";
 import { chatOnce } from "../lib/llm";
 import { renderCheckerInitialPrompt } from "../prompts/checker_initial_check";
 import { renderOutlinePrompt } from "../prompts/outline_generation";
+import { renderOutlineUpdatePrompt } from "../prompts/outline_update";
 
 export async function start(request: Request): Promise<Response> {
   try {
@@ -76,15 +77,20 @@ export async function outline(request: Request, env?: any): Promise<Response> {
           { role: 'user', content: prompt },
         ], { model: 'gpt-4o-mini', temperature: 0.3 });
 
-        // Keep questions optional for now; provide a few defaults to maintain UI
-        const questions = [
+        const parsed = parseOutlineJson(answer);
+        if (parsed) {
+          const checkerReview = runCheck(idea, parsed.outline);
+          return json({ ok: true, designId, outline: parsed.outline, questions: parsed.questions, checkerReview, checkerInitialExplanation: checkerText || "" });
+        }
+        // fallback: treat answer as outline, keep default questions
+        const defQuestions = [
           "Confirm any compliance or regulatory constraints",
           "List key systems to integrate",
           "Define success metrics and SLAs",
           "Identify any data privacy restrictions",
         ];
         const checkerReview = runCheck(idea, answer);
-        return json({ ok: true, designId, outline: answer, questions, checkerReview, checkerInitialExplanation: checkerText || "" });
+        return json({ ok: true, designId, outline: answer, questions: defQuestions, checkerReview, checkerInitialExplanation: checkerText || "" });
       } catch (e: any) {
         // fall through to deterministic fallback
       }
@@ -123,4 +129,83 @@ function parseYesNo(text: string): { valid: boolean; explanation: string } {
   else if (/\bno\b/.test(norm) && !/\byes\b/.test(norm)) valid = false;
   const explanation = raw.replace(/^\s*(yes|no)[:\-\s]*/i, '').trim();
   return { valid, explanation: explanation || raw };
+}
+
+function parseOutlineJson(answer: string): { outline: string; questions: string[] } | null {
+  const s = (answer || '').trim();
+  if (!s) return null;
+  // Try straight JSON first
+  let jsonStr = s;
+  // If the model wrapped JSON in code fences or extra text, extract first {...}
+  if (!jsonStr.startsWith('{')) {
+    const m = jsonStr.match(/\{[\s\S]*\}/);
+    if (m) jsonStr = m[0];
+  }
+  try {
+    const obj = JSON.parse(jsonStr);
+    const outline = typeof obj?.outline === 'string' ? String(obj.outline) : '';
+    const qs = Array.isArray(obj?.questions) ? obj.questions.map((q: any) => String(q)).filter(Boolean) : [];
+    if (outline) return { outline, questions: qs };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateOutline(request: Request, env?: any): Promise<Response> {
+  try {
+    const body = await request.json().catch(() => null) as {
+      designId?: string;
+      idea?: string;
+      outline?: string;
+      answers?: string;
+      questions?: string[];
+      checkerExplanation?: string;
+    } | null;
+    const designId = (body?.designId || "").trim();
+    const idea = (body?.idea || "").trim();
+    const outline = (body?.outline || "").trim();
+    const answers = (body?.answers || "").trim();
+    const questions = Array.isArray(body?.questions) ? body!.questions : [];
+    const checkerText = (body?.checkerExplanation || "").trim();
+    if (!designId) return bad(400, "missing designId", rid());
+    if (!outline) return bad(400, "missing outline", rid());
+
+    if (env) {
+      try {
+        const base = renderOutlineUpdatePrompt(designId);
+        const composed = [
+          base,
+          idea ? `\n\nConsultant idea:\n${idea}` : "",
+          checkerText ? `\n\nChecker explanation:\n${checkerText}` : "",
+          `\n\nPrevious outline:\n${outline}`,
+          questions.length ? `\n\nQuestions:\n- ${questions.join("\n- ")}` : "",
+          answers ? `\n\nAnswers:\n${answers}` : "",
+        ].join("");
+
+        const answer = await chatOnce(env, [
+          { role: 'system', content: 'You are the Outline agent. Update the high-level outline according to provided answers.' },
+          { role: 'user', content: composed },
+        ], { model: 'gpt-4o-mini', temperature: 0.3 });
+
+        const parsed = parseOutlineJson(answer);
+        if (parsed) {
+          const checkerReview = runCheck(idea || outline, parsed.outline);
+          return json({ ok: true, designId, outline: parsed.outline, questions: parsed.questions, checkerReview });
+        }
+        // fallback: reuse submitted questions
+        const checkerReview = runCheck(idea || outline, answer);
+        return json({ ok: true, designId, outline: answer, questions, checkerReview });
+      } catch (e: any) {
+        // fall through to deterministic fallback below
+      }
+    }
+
+    // Fallback: append note to indicate update in outline and return same questions
+    const updated = outline + "\n\n(Updated based on provided answers.)";
+    const checkerReview = runCheck(idea || outline, updated);
+    return json({ ok: true, designId, outline: updated, questions, checkerReview });
+  } catch (err: any) {
+    return bad(500, err?.message || "internal error", rid());
+  }
 }

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { startOutlineDesign } from "../services/agentDesign";
+import { startOutlineDesign, updateOutlineDesign } from "../services/agentDesign";
 import { renderBasicMarkdown } from "../utils/markdown";
 
 export default function AgentOutline() {
@@ -11,6 +11,7 @@ export default function AgentOutline() {
   const [result, setResult] = useState(null);
   const [answers, setAnswers] = useState("");
   const [answersSaved, setAnswersSaved] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -28,6 +29,29 @@ export default function AgentOutline() {
       setError(err.message || String(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onSubmitAnswers(e) {
+    e?.preventDefault?.();
+    if (!result?.designId || !result?.outline || !answers.trim()) return;
+    try {
+      setUpdating(true);
+      const updated = await updateOutlineDesign({
+        designId: result.designId,
+        idea,
+        outline: result.outline,
+        answers,
+        questions: result.questions || [],
+        checkerExplanation: result.checkerInitialExplanation || '',
+      });
+      setResult(updated);
+      setAnswers("");
+      setAnswersSaved(true);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -94,24 +118,40 @@ export default function AgentOutline() {
                   onChange={(e) => { setAnswers(e.target.value); setAnswersSaved(false); }}
                 />
                 <button
-                  onClick={() => setAnswersSaved(true)}
+                  onClick={onSubmitAnswers}
                   className="mt-2 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-                  disabled={!answers.trim()}
+                  disabled={!answers.trim() || updating}
                 >
-                  Submit
+                  {updating ? 'Submitting…' : 'Submit'}
                 </button>
                 {answersSaved && (
-                  <div className="text-sm opacity-80 mt-1">Saved locally — will send to Outline agent next.</div>
+                  <div className="text-sm opacity-80 mt-1">Outline updated.</div>
                 )}
               </div>
             </div>
           </div>
+          {updating && (<ProcessingDots label="Updating outline" />)}
           <div>
             <CloseToChat onClose={() => navigate('/chat')} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function ProcessingDots({ label = 'Processing' }) {
+  const React = require('react');
+  const { useEffect, useState } = React;
+  const [dots, setDots] = useState('');
+  useEffect(() => {
+    const id = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? '' : d + '.'));
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="text-sm opacity-80 mt-2">{label}{dots}</div>
   );
 }
 

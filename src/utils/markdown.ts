@@ -50,22 +50,13 @@ function segmentToHtml(md: string): string {
       htmlLines.push("<br/>");
       continue;
     }
-    // Headings
-    if (/^#\s+/.test(line)) {
-      flushList();
-      htmlLines.push(`<h1>${inline(line.replace(/^#\s+/, ""))}</h1>`);
-      continue;
-    }
-    if (/^##\s+/.test(line)) {
-      flushList();
-      htmlLines.push(`<h2>${inline(line.replace(/^##\s+/, ""))}</h2>`);
-      continue;
-    }
-    if (/^###\s+/.test(line)) {
-      flushList();
-      htmlLines.push(`<h3>${inline(line.replace(/^###\s+/, ""))}</h3>`);
-      continue;
-    }
+    // Headings (check longest first)
+    if (/^######\s+/.test(line)) { flushList(); htmlLines.push(`<h6>${inline(line.replace(/^######\s+/, ""))}</h6>`); continue; }
+    if (/^#####\s+/.test(line))  { flushList(); htmlLines.push(`<h5>${inline(line.replace(/^#####\s+/, ""))}</h5>`); continue; }
+    if (/^####\s+/.test(line))   { flushList(); htmlLines.push(`<h4>${inline(line.replace(/^####\s+/, ""))}</h4>`); continue; }
+    if (/^###\s+/.test(line))    { flushList(); htmlLines.push(`<h3>${inline(line.replace(/^###\s+/, ""))}</h3>`); continue; }
+    if (/^##\s+/.test(line))     { flushList(); htmlLines.push(`<h2>${inline(line.replace(/^##\s+/, ""))}</h2>`); continue; }
+    if (/^#\s+/.test(line))      { flushList(); htmlLines.push(`<h1>${inline(line.replace(/^#\s+/, ""))}</h1>`); continue; }
     // Lists
     if (/^[-*]\s+/.test(line)) {
       listBuffer.push(`<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`);
@@ -90,4 +81,3 @@ function inline(text: string): string {
   s = s.replace(/\*([^*]+)\*/g, (_m, g1) => `<em>${g1}</em>`);
   return s;
 }
-
