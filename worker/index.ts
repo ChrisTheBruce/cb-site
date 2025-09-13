@@ -66,7 +66,7 @@ export default {
       }
       // Lightweight health check (mobile reachability test)
       if (pathname === "/api/health" && request.method === "GET") {
-        return handleHealth();
+        return handleHealth(env as any, request);
       }
       // TEMP: Early return to prove routing and prevent hangs while diagnosing
       if (pathname === "/api/auth/ping") {
