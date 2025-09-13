@@ -136,7 +136,7 @@ export default {
       if (pathname === "/api/design/check" && request.method === "POST") {
         const authRes = await auth.me({ req: request, env });
         if (authRes.status !== 200) return authRes;
-        return await design.check(request);
+        return await design.check(request, env as any);
       }
 
       // Agent design: outline stub (auth required)
